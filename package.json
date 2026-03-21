@@ -4,7 +4,7 @@
   "description": "Azure DevOps task and project management CLI",
   "module": "src/cli/index.ts",
   "type": "module",
-  "author": "Renato Adorno",
+  "author": "Renato Adorno <renatoadorno@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
