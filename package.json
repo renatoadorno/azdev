@@ -1,0 +1,35 @@
+{
+  "name": "azdev",
+  "version": "0.1.0",
+  "description": "Azure DevOps task and project management CLI",
+  "module": "src/cli/index.ts",
+  "type": "module",
+  "author": "Renato Adorno",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/renatoadorno/azdev.git"
+  },
+  "homepage": "https://github.com/renatoadorno/azdev#readme",
+  "bugs": {
+    "url": "https://github.com/renatoadorno/azdev/issues"
+  },
+  "keywords": ["azure-devops", "devops", "cli", "work-items", "sprints", "boards", "azure"],
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "scripts": {
+    "dev:cli": "bun run src/cli/index.ts",
+    "build:install": "bun run build.js && bash scripts/install-dev.sh",
+    "install:cli": "bash scripts/install-dev.sh"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.10.2",
+    "@toon-format/toon": "^2.1.0",
+    "azure-devops-node-api": "^15.1.0",
+    "citty": "^0.2.1"
+  }
+}
