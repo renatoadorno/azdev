@@ -45,7 +45,7 @@ src/
     index.ts        — CLI entry point (citty), registers command groups
     config.ts       — loadCliConfig() / writeCliConfig() → ~/.config/azdev/config.json
     commands/       — One file per command group; each calls Services directly
-      workitem.ts   — 13 subcommands
+      workitem.ts   — 14 subcommands
       sprint.ts     — 4 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
