@@ -180,6 +180,7 @@ const create = defineCommand({
     state: { type: 'string', description: 'Initial state' },
     areaPath: { type: 'string', description: 'Area path' },
     iterationPath: { type: 'string', description: 'Iteration path' },
+    format: { type: 'string', description: 'Rich-text format for the description: html or markdown' },
   },
   async run({ args }) {
     try {
@@ -192,6 +193,7 @@ const create = defineCommand({
         state: args.state,
         areaPath: args.areaPath,
         iterationPath: args.iterationPath,
+        format: args.format === 'markdown' || args.format === 'html' ? args.format : undefined,
       });
       console.log(format(result, args));
     } catch (err: any) {
