@@ -3,6 +3,25 @@
  */
 export interface WorkItemByIdParams {
   id: number;
+  /** Restrict the returned fields (reference names, e.g. System.Title). */
+  fields?: string[];
+}
+
+/**
+ * Interface for listing children of a work item
+ */
+export interface ChildWorkItemsParams {
+  id: number;
+  /** Recurse the whole subtree instead of just direct children. */
+  recursive?: boolean;
+  /** Only children assigned to the current user. */
+  mine?: boolean;
+  /** Exact state filter. */
+  state?: string;
+  /** Exclude finished states (Done/Closed/Removed/Completed). */
+  openOnly?: boolean;
+  /** Work item type filter (e.g. Task, Bug). */
+  type?: string;
 }
 
 /**
@@ -34,6 +53,8 @@ export interface RecentWorkItemsParams {
 export interface MyWorkItemsParams {
   path: string;
   state?: string;
+  /** Exclude finished states (Done/Closed/Removed/Completed). */
+  openOnly?: boolean;
   top?: number;
 }
 
@@ -57,6 +78,8 @@ export interface CreateWorkItemParams {
 export interface UpdateWorkItemParams {
   id: number;
   fields: Record<string, any>;
+  /** Rich-text format for multiline fields being updated (e.g. System.Description). */
+  format?: 'html' | 'markdown';
 }
 
 /**

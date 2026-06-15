@@ -15,7 +15,7 @@ Downloads the latest release for your platform (Darwin arm64 or Linux x86-64), v
 To install a specific version:
 
 ```bash
-AZDEV_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
+AZDEV_VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
 ```
 
 Add `~/.local/bin` to your PATH if not already present:
@@ -56,7 +56,7 @@ Override the default project for any command with `--project <name>`.
 
 | Group | Subcommands | Description |
 |---|---|---|
-| `workitem` | 13 | List, search, create, update, comment, link work items |
+| `workitem` | 14 | List, search, create, update, comment, link work items; list children |
 | `sprint` | 4 | List sprints, get current sprint, items and capacity |
 | `board` | 5 | List boards, columns, items; move cards; team members |
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |
@@ -68,7 +68,7 @@ Full command reference: [docs/commands.md](./docs/commands.md)
 
 - [Getting Started](./docs/getting-started.md) — installation, initial setup, first commands
 - [Configuration](./docs/configuration.md) — all config keys, auth types (PAT, Entra ID, NTLM, Basic), on-premises setup
-- [Command Reference](./docs/commands.md) — all 32 subcommands with arguments, options, and examples
+- [Command Reference](./docs/commands.md) — all subcommands with arguments, options, and examples
 
 ## Development
 

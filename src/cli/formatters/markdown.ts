@@ -1,17 +1,33 @@
+function isObjectArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null;
+}
+
+function cell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+function table(rows: Record<string, unknown>[]): string {
+  const keys = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  const header = `| ${keys.join(' | ')} |`;
+  const separator = `| ${keys.map(() => '---').join(' | ')} |`;
+  const body = rows.map(row => `| ${keys.map(k => cell(row[k])).join(' | ')} |`);
+  return [header, separator, ...body].join('\n');
+}
+
 export function formatMarkdown(data: unknown): string {
-  if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null) {
-    const keys = Object.keys(data[0]);
-    const header = `| ${keys.join(' | ')} |`;
-    const separator = `| ${keys.map(() => '---').join(' | ')} |`;
-    const rows = data.map((row: Record<string, unknown>) =>
-      `| ${keys.map(k => String(row[k] ?? '')).join(' | ')} |`
-    );
-    return [header, separator, ...rows].join('\n');
+  if (Array.isArray(data)) {
+    return isObjectArray(data) ? table(data) : data.map(cell).join('\n');
   }
 
-  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+  if (typeof data === 'object' && data !== null) {
     return Object.entries(data as Record<string, unknown>)
-      .map(([k, v]) => `**${k}**: ${typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')}`)
+      .map(([k, v]) =>
+        isObjectArray(v)
+          ? `**${k}**:\n\n${table(v)}`
+          : `**${k}**: ${typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '')}`
+      )
       .join('\n');
   }
 

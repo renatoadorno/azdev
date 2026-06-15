@@ -16,6 +16,8 @@ These flags are available on every command:
 
 Work item management.
 
+> **Note:** `list`, `mine`, `search`, `recent` and `children` hydrate their results — WIQL only returns IDs, so the CLI batch-fetches the queried fields and returns ready-to-read rows (great for `--markdown` tables). `children` always includes id/type/state/title/assignee/parent.
+
 ### `workitem list`
 
 List work items using a WIQL query.
@@ -42,21 +44,51 @@ azdev workitem list --query "SELECT [System.Id], [System.Title] FROM WorkItems W
 
 ### `workitem get`
 
-Get a single work item by ID.
+Get a single work item by ID. Shows a slim view by default (drops avatars, links and descriptors; identity fields collapse to display names).
 
 ```
-azdev workitem get <id>
+azdev workitem get <id> [--fields <csv>] [--raw]
 ```
 
-| Argument | Type | Description |
+| Argument/Option | Type | Description |
 |---|---|---|
 | `id` | number | Work item ID |
+| `--fields` | csv | Only show these fields (short names like `title,state,assignedTo` or full refs like `System.Title`) |
+| `--raw` | boolean | Return the full raw work item (all fields, avatars, links) |
 
 **Examples:**
 
 ```bash
 azdev workitem get 42
-azdev workitem get 42 --json
+azdev workitem get 42 --fields title,state,assignedTo
+azdev workitem get 42 --raw --json
+```
+
+---
+
+### `workitem children`
+
+List the children of a work item. Direct children by default; use `--recursive` for the whole subtree. Results are hydrated (id, type, state, title, assignee, parent).
+
+```
+azdev workitem children <id> [--recursive] [--mine] [--open] [--state <s>] [--type <t>]
+```
+
+| Argument/Option | Type | Description |
+|---|---|---|
+| `id` | number | Parent work item ID |
+| `--recursive` | boolean | Include the whole subtree, not just direct children |
+| `--mine` | boolean | Only items assigned to me |
+| `--open` | boolean | Exclude finished states (Done/Closed/Removed/Completed) |
+| `--state` | string | Exact state filter |
+| `--type` | string | Work item type filter (e.g. `Task`, `Bug`) |
+
+**Examples:**
+
+```bash
+azdev workitem children 7692
+azdev workitem children 7692 --mine --open --markdown
+azdev workitem children 7692 --recursive --type Task
 ```
 
 ---
@@ -130,12 +162,13 @@ azdev workitem recent --top 20 --skip 10
 Get work items assigned to the current user.
 
 ```
-azdev workitem mine [--state <state>] [--path <iterationPath>] [--top <n>]
+azdev workitem mine [--state <state>] [--open] [--path <iterationPath>] [--top <n>]
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `--state` | string | — | Filter by state (e.g., `Active`, `Resolved`) |
+| `--state` | string | — | Filter by exact state (e.g., `Active`, `Resolved`) |
+| `--open` | boolean | — | Exclude finished states (Done/Closed/Removed/Completed) |
 | `--path` | string | — | Filter by iteration path |
 | `--top` | number | `100` | Max results |
 
@@ -143,6 +176,7 @@ azdev workitem mine [--state <state>] [--path <iterationPath>] [--top <n>]
 
 ```bash
 azdev workitem mine
+azdev workitem mine --open
 azdev workitem mine --state Active
 azdev workitem mine --path "MyProject\\Sprint 5"
 ```
@@ -181,19 +215,25 @@ azdev workitem create --type Bug --title "Crash on logout" --assignedTo "Jane Do
 Update fields on an existing work item.
 
 ```
-azdev workitem update <id> --fields '<json>'
+azdev workitem update <id> --fields '<json>' [--format html|markdown]
 ```
 
 | Argument/Option | Type | Required | Description |
 |---|---|---|---|
 | `id` | number | Yes | Work item ID |
 | `--fields` | JSON string | Yes | JSON object of fields to update |
+| `--format` | `html` \| `markdown` | No | Rich-text format for multiline fields (Description, AcceptanceCriteria, ReproSteps, History) |
+
+Rich-text fields (e.g. `System.Description`) render as **HTML** by default — raw Markdown shows up literally. Pass `--format markdown` to have Azure DevOps render Markdown. The format only sticks when the field's **content also changes** in the same update (setting format alone on identical text is a no-op).
 
 **Examples:**
 
 ```bash
 azdev workitem update 42 --fields '{"System.State":"Done"}'
 azdev workitem update 42 --fields '{"System.Title":"New title","System.AssignedTo":"john@example.com"}'
+
+# Markdown description. Build the JSON with a tool (avoids shell-quoting hell):
+azdev workitem update 42 --fields "$(cat fields.json)" --format markdown
 ```
 
 ---

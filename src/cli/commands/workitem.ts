@@ -1,7 +1,14 @@
 import { defineCommand } from 'citty';
 import { WorkItemService } from '../../services/WorkItemService';
+import { slimWorkItem } from '../../services/workItemUtils';
 import { loadCliConfig } from '../config';
 import { format } from '../formatters/index';
+
+function parseCsv(value?: string): string[] | undefined {
+  if (!value) return undefined;
+  const parts = value.split(',').map(s => s.trim()).filter(Boolean);
+  return parts.length ? parts : undefined;
+}
 
 const globalOptions = {
   json: { type: 'boolean' as const, description: 'Output as JSON' },
@@ -34,15 +41,49 @@ const list = defineCommand({
 });
 
 const get = defineCommand({
-  meta: { name: 'get', description: 'Get a work item by ID' },
+  meta: { name: 'get', description: 'Get a work item by ID (slim view by default)' },
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
+    fields: { type: 'string', description: 'Comma-separated fields to show (e.g. title,state,assignedTo)' },
+    raw: { type: 'boolean', description: 'Return the full raw work item (avatars, links, all fields)' },
   },
   async run({ args }) {
     try {
       const svc = getService(args);
-      const result = await svc.getWorkItemById({ id: Number(args.id) });
+      const fields = parseCsv(args.fields);
+      const result = await svc.getWorkItemById({ id: Number(args.id), fields });
+      const view = args.raw ? result : slimWorkItem(result, fields);
+      console.log(format(view, args));
+    } catch (err: any) {
+      console.error(err.message);
+      process.exit(1);
+    }
+  },
+});
+
+const children = defineCommand({
+  meta: { name: 'children', description: 'List children of a work item' },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Parent work item ID', required: true },
+    recursive: { type: 'boolean', description: 'Include the whole subtree, not just direct children' },
+    mine: { type: 'boolean', description: 'Only items assigned to me' },
+    open: { type: 'boolean', description: 'Exclude finished states (Done/Closed/Removed/Completed)' },
+    state: { type: 'string', description: 'Exact state filter' },
+    type: { type: 'string', description: 'Work item type filter (e.g. Task, Bug)' },
+  },
+  async run({ args }) {
+    try {
+      const svc = getService(args);
+      const result = await svc.getChildWorkItems({
+        id: Number(args.id),
+        recursive: args.recursive,
+        mine: args.mine,
+        openOnly: args.open,
+        state: args.state,
+        type: args.type,
+      });
       console.log(format(result, args));
     } catch (err: any) {
       console.error(err.message);
@@ -113,12 +154,13 @@ const mine = defineCommand({
     ...globalOptions,
     path: { type: 'string', description: 'Iteration path filter', default: '' },
     state: { type: 'string', description: 'State filter' },
+    open: { type: 'boolean', description: 'Exclude finished states (Done/Closed/Removed/Completed)' },
     top: { type: 'string', description: 'Max results', default: '100' },
   },
   async run({ args }) {
     try {
       const svc = getService(args);
-      const result = await svc.getMyWorkItems({ path: args.path!, state: args.state, top: Number(args.top) });
+      const result = await svc.getMyWorkItems({ path: args.path!, state: args.state, openOnly: args.open, top: Number(args.top) });
       console.log(format(result, args));
     } catch (err: any) {
       console.error(err.message);
@@ -165,12 +207,14 @@ const update = defineCommand({
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
     fields: { type: 'string', description: 'JSON object of fields to update', required: true },
+    format: { type: 'string', description: 'Rich-text format for multiline fields: html or markdown' },
   },
   async run({ args }) {
     try {
       const svc = getService(args);
       const fields = JSON.parse(args.fields!);
-      const result = await svc.updateWorkItem({ id: Number(args.id), fields });
+      const format_ = args.format === 'markdown' || args.format === 'html' ? args.format : undefined;
+      const result = await svc.updateWorkItem({ id: Number(args.id), fields, format: format_ });
       console.log(format(result, args));
     } catch (err: any) {
       console.error(err.message);
@@ -287,6 +331,7 @@ export default defineCommand({
   subCommands: {
     list,
     get,
+    children,
     history,
     search,
     recent,
