@@ -70,6 +70,8 @@ export interface CreateWorkItemParams {
   areaPath?: string;
   iterationPath?: string;
   additionalFields?: Record<string, any>;
+  /** Rich-text format for multiline fields being set (e.g. System.Description). */
+  format?: 'html' | 'markdown';
 }
 
 /**
