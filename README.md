@@ -15,7 +15,7 @@ Downloads the latest release for your platform (Darwin arm64 or Linux x86-64), v
 To install a specific version:
 
 ```bash
-AZDEV_VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
+AZDEV_VERSION=v0.3.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
 ```
 
 Add `~/.local/bin` to your PATH if not already present:

@@ -195,17 +195,21 @@ azdev workitem create --type <type> --title <title> [options]
 |---|---|---|---|
 | `--type` | string | Yes | Work item type (e.g., `Task`, `Bug`, `User Story`) |
 | `--title` | string | Yes | Title |
-| `--description` | string | No | Description (HTML supported) |
+| `--description` | string | No | Description (HTML by default; Markdown with `--format markdown`) |
 | `--assignedTo` | string | No | Assign to user (display name or email) |
 | `--state` | string | No | Initial state |
 | `--areaPath` | string | No | Area path |
 | `--iterationPath` | string | No | Iteration path |
+| `--format` | `html` \| `markdown` | No | Rich-text format for the description |
 
 **Examples:**
 
 ```bash
 azdev workitem create --type Task --title "Fix login button"
 azdev workitem create --type Bug --title "Crash on logout" --assignedTo "Jane Doe" --state Active
+azdev workitem create --type Task --title "Spec" --description "## Goals
+- one
+- two" --format markdown
 ```
 
 ---

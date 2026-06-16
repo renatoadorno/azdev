@@ -367,7 +367,22 @@ export class WorkItemService extends AzureDevOpsService {
           });
         }
       }
-      
+
+      // Mark rich-text format (HTML vs Markdown) for the multiline fields set.
+      if (params.format) {
+        const formatValue = params.format === 'markdown' ? 'Markdown' : 'Html';
+        const multilineRefs = patchDocument
+          .map(op => (op.path?.startsWith('/fields/') ? op.path.slice('/fields/'.length) : undefined))
+          .filter((ref): ref is string => !!ref && MULTILINE_FIELDS.includes(ref));
+        for (const ref of multilineRefs) {
+          patchDocument.push({
+            op: Operation.Add,
+            path: `/multilineFieldsFormat/${ref}`,
+            value: formatValue
+          });
+        }
+      }
+
       const workItem = await witApi.createWorkItem(
         undefined,
         patchDocument,
