@@ -255,10 +255,13 @@ azdev workitem comment <id> --text <text>
 | `id` | number | Yes | Work item ID |
 | `--text` | string | Yes | Comment text (HTML supported) |
 
+> **Note:** `#<number>` autolinks to a work item (e.g. `#42` → work item 42). Don't prefix
+> non-work-item ids (PRs, builds) with `#` or they link to the wrong item — use a full URL.
+
 **Examples:**
 
 ```bash
-azdev workitem comment 42 --text "Fixed in PR #87"
+azdev workitem comment 42 --text "Fixed in PR: https://github.com/myorg/myrepo/pull/87"
 ```
 
 ---
