@@ -28,27 +28,30 @@ This repo exposes Azure DevOps **task and project management** capabilities via 
 
 - **CLI** (`dist/azdev`) — uses `citty`, outputs toon-format by default (token-efficient), with `--json` and `--markdown` flags
 
-**Active modules:** WorkItems, BoardsSprints, Projects.
+**Active modules:** WorkItems, BoardsSprints, Projects, Metadata.
 
 ### Layer structure
 
 ```
 src/
-  Interfaces/       — TypeScript types shared across layers
+  interfaces/       — TypeScript types shared across layers
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
     *.ts            — Domain-specific param interfaces per command group
-  Services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
+  services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
     AzureDevOpsService.ts  — Base class: creates azdev.WebApi connection, handles auth
     EntraAuthHandler.ts    — Singleton IRequestHandler using DefaultAzureCredential (Entra/OIDC)
     *Service.ts     — Domain services extending AzureDevOpsService
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     config.ts       — loadCliConfig() / writeCliConfig() → ~/.config/azdev/config.json
-    commands/       — One file per command group; each calls Services directly
+    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, PAT hint on 401) + exit
+    parsers.ts      — parseId(): positive-integer validation for work item IDs
+    commands/       — One file per command group; each calls services directly
       workitem.ts   — 14 subcommands
       sprint.ts     — 4 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
+      metadata.ts   — 2 subcommands (types, tags)
       config.ts     — show / set / get
     formatters/
       index.ts      — format(data, flags) selector
@@ -73,9 +76,15 @@ src/
 
 ### Adding a new command
 
-1. Add param interface to the appropriate `src/Interfaces/*.ts` file
-2. Add method to the relevant `*Service.ts` (extending `AzureDevOpsService`)
+1. Add param interface to the appropriate `src/interfaces/*.ts` file
+2. Add method to the relevant `*Service.ts` in `src/services/` (extending `AzureDevOpsService`)
 3. Add subcommand to the relevant `src/cli/commands/*.ts`, calling the service directly
+
+### Exit codes
+
+- `0` — success
+- `1` — error (API failures via `exitWithError`, invalid IDs, invalid flag values)
+- `2` — config file missing or incomplete (`loadCliConfig` / `config show`)
 
 ## Configuration
 

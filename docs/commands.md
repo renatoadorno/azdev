@@ -10,6 +10,10 @@ These flags are available on every command:
 | `--markdown` | Output as Markdown table (arrays) or key: value pairs (objects) |
 | `--project <name>` | Override the default project from config for this command only |
 
+Work item IDs (`<id>`, `<cardId>`, `--targetId`) are validated as positive integers before any API call — invalid values exit `1`.
+
+Exit codes: `0` success · `1` error (API failure, invalid ID/flag) · `2` config missing or incomplete.
+
 ---
 
 ## workitem
@@ -200,7 +204,9 @@ azdev workitem create --type <type> --title <title> [options]
 | `--state` | string | No | Initial state |
 | `--areaPath` | string | No | Area path |
 | `--iterationPath` | string | No | Iteration path |
-| `--format` | `html` \| `markdown` | No | Rich-text format for the description |
+| `--format` | `html` \| `markdown` | No | Rich-text format for the description (any other value exits `1`) |
+
+Type or state name uncertain? Run `azdev metadata types` to see the project's types and their valid states.
 
 **Examples:**
 
@@ -226,7 +232,7 @@ azdev workitem update <id> --fields '<json>' [--format html|markdown]
 |---|---|---|---|
 | `id` | number | Yes | Work item ID |
 | `--fields` | JSON string | Yes | JSON object of fields to update |
-| `--format` | `html` \| `markdown` | No | Rich-text format for multiline fields (Description, AcceptanceCriteria, ReproSteps, History) |
+| `--format` | `html` \| `markdown` | No | Rich-text format for multiline fields (Description, AcceptanceCriteria, ReproSteps, History); any other value exits `1` |
 
 Rich-text fields (e.g. `System.Description`) render as **HTML** by default — raw Markdown shows up literally. Pass `--format markdown` to have Azure DevOps render Markdown. The format only sticks when the field's **content also changes** in the same update (setting format alone on identical text is a no-op).
 
@@ -443,7 +449,7 @@ azdev sprint items "abc-def-123" --teamId "my-team-id"
 
 ### `sprint capacity`
 
-Get capacity information for a sprint.
+Get capacity for a sprint. Returns per-member activities (`name`, `capacityPerDay`) and days off, plus team totals (`totalCapacityPerDay`, `totalDaysOff`).
 
 ```
 azdev sprint capacity <sprintId> [--teamId <id>]
@@ -510,7 +516,7 @@ azdev board columns "Backlog"
 
 ### `board items`
 
-Get board and column information for a board.
+List the cards on a board as slim work items (id, title, state, type, assignee, board column). Items without a board column value are skipped. Results are capped at 200; a warning is printed on stderr when the cap is hit.
 
 ```
 azdev board items <boardId> [--teamId <id>]
@@ -532,19 +538,18 @@ azdev board items "Backlog" --json
 
 ### `board move`
 
-Move a work item card to a different board column.
+Move a work item card to another board column — updates the board's column field on the work item. If the column does not exist, the command fails and lists the available columns. Returns `{ id, board, column }`.
 
 ```
-azdev board move <cardId> --boardId <id> --columnId <id> [--teamId <id>] [--position <n>]
+azdev board move <cardId> --boardId <id> --columnId <id-or-name> [--teamId <id>]
 ```
 
 | Argument/Option | Type | Required | Description |
 |---|---|---|---|
 | `cardId` | number | Yes | Work item ID to move |
-| `--boardId` | string | Yes | Board ID |
-| `--columnId` | string | Yes | Target column ID |
+| `--boardId` | string | Yes | Board ID (get it from `board list`) |
+| `--columnId` | string | Yes | Target column — accepts column ID or column name |
 | `--teamId` | string | No | Team ID |
-| `--position` | number | No | Position within the column |
 
 **Examples:**
 
@@ -556,7 +561,7 @@ azdev board move 42 --boardId "Backlog" --columnId "In Progress"
 
 ### `board members`
 
-Get team members for a team.
+Get team members. Returns slim rows: `displayName`, `uniqueName`, and `isTeamAdmin` (when true). Defaults to the project's default team when `--teamId` is omitted.
 
 ```
 azdev board members [--teamId <id>]
@@ -636,7 +641,7 @@ azdev project create --name <name> [--description <text>] [--visibility <private
 |---|---|---|---|---|
 | `--name` | string | Yes | — | Project name |
 | `--description` | string | No | — | Project description |
-| `--visibility` | string | No | `private` | Visibility: `private` or `public` |
+| `--visibility` | string | No | `private` | Visibility: `private` or `public` — any other value exits `1` |
 
 **Examples:**
 
@@ -649,7 +654,7 @@ azdev project create --name "Open Source App" --visibility public --description 
 
 ### `project areas`
 
-Get area paths for a project.
+Get the area tree of a project, flattened to `{ name, path }` rows. `path` is field-ready — usable directly as `System.AreaPath` (e.g. `MyProject\Backend`).
 
 ```
 azdev project areas <projectId>
@@ -669,7 +674,7 @@ azdev project areas MyProject
 
 ### `project iterations`
 
-Get iteration paths (sprints) for a project.
+Get the iteration tree of a project, flattened to `{ name, path, startDate, finishDate }` rows. `path` is field-ready — usable directly as `System.IterationPath`.
 
 ```
 azdev project iterations <projectId>
@@ -736,7 +741,7 @@ azdev project create-iteration --projectId MyProject --name "Sprint 10" --startD
 
 ### `project processes`
 
-List available process templates.
+List available process templates. Returns slim rows: `{ id, name, description, isDefault }`.
 
 ```
 azdev project processes
@@ -752,7 +757,7 @@ azdev project processes --json
 
 ### `project work-item-types`
 
-List work item types for a process.
+List work item types for a **process** (requires a process ID from `project processes`). For the current project's types and states, use `azdev metadata types` instead.
 
 ```
 azdev project work-item-types <processId>
@@ -772,7 +777,7 @@ azdev project work-item-types "abc-def-123"
 
 ### `project work-item-fields`
 
-Get fields for a specific work item type in a process.
+Get fields for a specific work item type in a process. Returns slim rows: `{ referenceName, name, type, required }`.
 
 ```
 azdev project work-item-fields --processId <id> --witRefName <refName>
@@ -787,6 +792,51 @@ azdev project work-item-fields --processId <id> --witRefName <refName>
 
 ```bash
 azdev project work-item-fields --processId "abc-def-123" --witRefName "Microsoft.VSTS.WorkItemTypes.Bug"
+```
+
+---
+
+## metadata
+
+Project metadata — runs against the configured project (or `--project`).
+
+### `metadata types`
+
+List the work item types available in the project. Slim by default: `name`, `referenceName`, `description`, `states` (state names). Use it to discover valid types and states before `workitem create` / `set-state`.
+
+```
+azdev metadata types [--raw]
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `--raw` | boolean | Full raw types (color, icon, fields, transitions) |
+
+**Examples:**
+
+```bash
+azdev metadata types
+azdev metadata types --markdown
+```
+
+---
+
+### `metadata tags`
+
+List the tags defined in the project. Slim by default: names only.
+
+```
+azdev metadata tags [--raw]
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `--raw` | boolean | Full raw tags (id, lastUpdated, url) |
+
+**Examples:**
+
+```bash
+azdev metadata tags
 ```
 
 ---

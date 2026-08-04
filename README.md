@@ -15,7 +15,7 @@ Downloads the latest release for your platform (Darwin arm64 or Linux x86-64), v
 To install a specific version:
 
 ```bash
-AZDEV_VERSION=v0.3.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
+AZDEV_VERSION=v0.4.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
 ```
 
 Add `~/.local/bin` to your PATH if not already present:
@@ -58,11 +58,20 @@ Override the default project for any command with `--project <name>`.
 |---|---|---|
 | `workitem` | 14 | List, search, create, update, comment, link work items; list children |
 | `sprint` | 4 | List sprints, get current sprint, items and capacity |
-| `board` | 5 | List boards, columns, items; move cards; team members |
+| `board` | 5 | List boards, columns, cards; move cards between columns; team members |
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |
+| `metadata` | 2 | Work item types (with states) and tags of the current project |
 | `config` | 3 | Show, get, and set CLI configuration |
 
 Full command reference: [docs/commands.md](./docs/commands.md)
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Error — API failure, invalid ID or flag value |
+| `2` | Config file missing or incomplete (`orgUrl`/`project`) |
 
 ## Documentation
 
