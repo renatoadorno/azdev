@@ -7,6 +7,11 @@
 /** States considered "finished" — used by the --open filter. */
 export const CLOSED_STATES = ['Done', 'Closed', 'Removed', 'Completed'];
 
+/** WIQL string literals escape single quotes by doubling them. */
+export function wiqlEscape(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 /** Hierarchy link type for parent/child relations. */
 export const HIERARCHY_FORWARD = 'System.LinkTypes.Hierarchy-Forward';
 

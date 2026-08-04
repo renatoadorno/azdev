@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import * as fs from 'fs';
 import { CONFIG_PATH, loadCliConfig, writeCliConfig } from '../config';
+import { exitWithError } from '../errors';
 import { format } from '../formatters/index';
 
 const globalOptions = {
@@ -34,9 +35,8 @@ const set = defineCommand({
     try {
       writeCliConfig(args.key!, args.value!);
       console.log(`Set ${args.key}`);
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -56,9 +56,8 @@ const get = defineCommand({
         process.exit(1);
       }
       console.log(format(value, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });

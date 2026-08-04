@@ -2,12 +2,23 @@ import { defineCommand } from 'citty';
 import { WorkItemService } from '../../services/WorkItemService';
 import { slimWorkItem } from '../../services/workItemUtils';
 import { loadCliConfig } from '../config';
+import { exitWithError } from '../errors';
 import { format } from '../formatters/index';
+import { parseId } from '../parsers';
 
 function parseCsv(value?: string): string[] | undefined {
   if (!value) return undefined;
   const parts = value.split(',').map(s => s.trim()).filter(Boolean);
   return parts.length ? parts : undefined;
+}
+
+function parseRichTextFormat(value?: string): 'html' | 'markdown' | undefined {
+  if (!value) return undefined;
+  if (value !== 'html' && value !== 'markdown') {
+    console.error(`--format must be 'html' or 'markdown' (got '${value}')`);
+    process.exit(1);
+  }
+  return value;
 }
 
 const globalOptions = {
@@ -33,9 +44,8 @@ const list = defineCommand({
       const svc = getService(args);
       const result = await svc.listWorkItems(args.query!);
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -49,15 +59,15 @@ const get = defineCommand({
     raw: { type: 'boolean', description: 'Return the full raw work item (avatars, links, all fields)' },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
       const fields = parseCsv(args.fields);
-      const result = await svc.getWorkItemById({ id: Number(args.id), fields });
+      const result = await svc.getWorkItemById({ id, fields });
       const view = args.raw ? result : slimWorkItem(result, fields);
       console.log(format(view, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -74,10 +84,11 @@ const children = defineCommand({
     type: { type: 'string', description: 'Work item type filter (e.g. Task, Bug)' },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
       const result = await svc.getChildWorkItems({
-        id: Number(args.id),
+        id,
         recursive: args.recursive,
         mine: args.mine,
         openOnly: args.open,
@@ -85,9 +96,8 @@ const children = defineCommand({
         type: args.type,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -99,13 +109,13 @@ const history = defineCommand({
     id: { type: 'positional', description: 'Work item ID', required: true },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
-      const result = await svc.getWorkItemHistory({ id: Number(args.id) });
+      const result = await svc.getWorkItemHistory({ id });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -122,9 +132,8 @@ const search = defineCommand({
       const svc = getService(args);
       const result = await svc.searchWorkItems({ searchText: args.query!, top: args.top ? Number(args.top) : undefined });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -141,9 +150,8 @@ const recent = defineCommand({
       const svc = getService(args);
       const result = await svc.getRecentWorkItems({ top: Number(args.top), skip: Number(args.skip) });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -162,9 +170,8 @@ const mine = defineCommand({
       const svc = getService(args);
       const result = await svc.getMyWorkItems({ path: args.path!, state: args.state, openOnly: args.open, top: Number(args.top) });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -180,9 +187,10 @@ const create = defineCommand({
     state: { type: 'string', description: 'Initial state' },
     areaPath: { type: 'string', description: 'Area path' },
     iterationPath: { type: 'string', description: 'Iteration path' },
-    format: { type: 'string', description: 'Rich-text format for the description: html or markdown' },
+    format: { type: 'string', description: "Format of the rich-text FIELDS being set (description etc.): 'html' or 'markdown'. For the CLI output format use --json/--markdown" },
   },
   async run({ args }) {
+    const richTextFormat = parseRichTextFormat(args.format);
     try {
       const svc = getService(args);
       const result = await svc.createWorkItem({
@@ -193,12 +201,11 @@ const create = defineCommand({
         state: args.state,
         areaPath: args.areaPath,
         iterationPath: args.iterationPath,
-        format: args.format === 'markdown' || args.format === 'html' ? args.format : undefined,
+        format: richTextFormat,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -209,18 +216,18 @@ const update = defineCommand({
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
     fields: { type: 'string', description: 'JSON object of fields to update', required: true },
-    format: { type: 'string', description: 'Rich-text format for multiline fields: html or markdown' },
+    format: { type: 'string', description: "Format of the rich-text FIELDS being updated (description etc.): 'html' or 'markdown'. For the CLI output format use --json/--markdown" },
   },
   async run({ args }) {
+    const id = parseId(args.id);
+    const richTextFormat = parseRichTextFormat(args.format);
     try {
       const svc = getService(args);
       const fields = JSON.parse(args.fields!);
-      const format_ = args.format === 'markdown' || args.format === 'html' ? args.format : undefined;
-      const result = await svc.updateWorkItem({ id: Number(args.id), fields, format: format_ });
+      const result = await svc.updateWorkItem({ id, fields, format: richTextFormat });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -233,13 +240,13 @@ const comment = defineCommand({
     text: { type: 'string', description: 'Comment text', required: true },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
-      const result = await svc.addWorkItemComment({ id: Number(args.id), text: args.text! });
+      const result = await svc.addWorkItemComment({ id, text: args.text! });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -253,13 +260,13 @@ const setState = defineCommand({
     comment: { type: 'string', description: 'Optional comment' },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
-      const result = await svc.updateWorkItemState({ id: Number(args.id), state: args.state!, comment: args.comment });
+      const result = await svc.updateWorkItemState({ id, state: args.state!, comment: args.comment });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -272,13 +279,13 @@ const assign = defineCommand({
     to: { type: 'string', description: 'User to assign to', required: true },
   },
   async run({ args }) {
+    const id = parseId(args.id);
     try {
       const svc = getService(args);
-      const result = await svc.assignWorkItem({ id: Number(args.id), assignedTo: args.to! });
+      const result = await svc.assignWorkItem({ id, assignedTo: args.to! });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -293,18 +300,19 @@ const link = defineCommand({
     comment: { type: 'string', description: 'Optional comment' },
   },
   async run({ args }) {
+    const sourceId = parseId(args.id, 'source work item ID');
+    const targetId = parseId(args.targetId, 'target work item ID');
     try {
       const svc = getService(args);
       const result = await svc.createLink({
-        sourceId: Number(args.id),
-        targetId: Number(args.targetId),
+        sourceId,
+        targetId,
         linkType: args.linkType!,
         comment: args.comment,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -321,9 +329,8 @@ const bulkCreate = defineCommand({
       const workItems = JSON.parse(args.items!);
       const result = await svc.bulkUpdateWorkItems({ workItems });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
