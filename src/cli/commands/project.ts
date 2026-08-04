@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import { ProjectService } from '../../services/ProjectService';
 import { loadCliConfig } from '../config';
+import { exitWithError } from '../errors';
 import { format } from '../formatters/index';
 
 const globalOptions = {
@@ -32,9 +33,8 @@ const list = defineCommand({
         stateFilter: args.state as any,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -54,9 +54,8 @@ const get = defineCommand({
         includeCapabilities: args.capabilities,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -71,16 +70,18 @@ const create = defineCommand({
   },
   async run({ args }) {
     try {
+      if (args.visibility !== 'private' && args.visibility !== 'public') {
+        throw new Error(`Invalid --visibility "${args.visibility}": must be "private" or "public"`);
+      }
       const svc = getService(args);
       const result = await svc.createProject({
         name: args.name!,
         description: args.description,
-        visibility: args.visibility as 'private' | 'public',
+        visibility: args.visibility,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -98,9 +99,8 @@ const areas = defineCommand({
         projectId: args.projectId!,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -116,9 +116,8 @@ const iterations = defineCommand({
       const svc = getService(args);
       const result = await svc.getIterations({ projectId: args.projectId! });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -140,9 +139,8 @@ const createArea = defineCommand({
         parentPath: args.parentPath,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -168,9 +166,8 @@ const createIteration = defineCommand({
         finishDate: args.finishDate,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -183,15 +180,17 @@ const processes = defineCommand({
       const svc = getService(args);
       const result = await svc.getProcesses({});
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
 
 const workItemTypes = defineCommand({
-  meta: { name: 'work-item-types', description: 'Get work item types for a process' },
+  meta: {
+    name: 'work-item-types',
+    description: "Get work item types for a process — process-scoped (requires processId); for the current project's types and states use: azdev metadata types",
+  },
   args: {
     ...globalOptions,
     processId: { type: 'positional', description: 'Process ID', required: true },
@@ -201,9 +200,8 @@ const workItemTypes = defineCommand({
       const svc = getService(args);
       const result = await svc.getWorkItemTypes({ processId: args.processId! });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -223,9 +221,8 @@ const workItemFields = defineCommand({
         witRefName: args.witRefName!,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });

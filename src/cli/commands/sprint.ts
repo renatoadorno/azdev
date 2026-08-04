@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import { BoardsSprintsService } from '../../services/BoardsSprintsService';
 import { loadCliConfig } from '../config';
+import { exitWithError } from '../errors';
 import { format } from '../formatters/index';
 
 const globalOptions = {
@@ -26,9 +27,8 @@ const list = defineCommand({
       const svc = getService(args);
       const result = await svc.getSprints({ teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -44,9 +44,8 @@ const current = defineCommand({
       const svc = getService(args);
       const result = await svc.getCurrentSprint({ teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -63,9 +62,8 @@ const items = defineCommand({
       const svc = getService(args);
       const result = await svc.getSprintWorkItems({ sprintId: args.sprintId!, teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -82,9 +80,8 @@ const capacity = defineCommand({
       const svc = getService(args);
       const result = await svc.getSprintCapacity({ sprintId: args.sprintId!, teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });

@@ -1,7 +1,9 @@
 import { defineCommand } from 'citty';
 import { BoardsSprintsService } from '../../services/BoardsSprintsService';
 import { loadCliConfig } from '../config';
+import { exitWithError } from '../errors';
 import { format } from '../formatters/index';
+import { parseId } from '../parsers';
 
 const globalOptions = {
   json: { type: 'boolean' as const, description: 'Output as JSON' },
@@ -26,9 +28,8 @@ const list = defineCommand({
       const svc = getService(args);
       const result = await svc.getBoards({ teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -45,9 +46,8 @@ const columns = defineCommand({
       const svc = getService(args);
       const result = await svc.getBoardColumns({ boardId: args.boardId!, teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -64,9 +64,8 @@ const boardItems = defineCommand({
       const svc = getService(args);
       const result = await svc.getBoardItems({ boardId: args.boardId!, teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -77,24 +76,22 @@ const move = defineCommand({
     ...globalOptions,
     cardId: { type: 'positional', description: 'Work item ID to move', required: true },
     boardId: { type: 'string', description: 'Board ID', required: true },
-    columnId: { type: 'string', description: 'Target column ID', required: true },
+    columnId: { type: 'string', description: 'Target column (accepts column ID or column name)', required: true },
     teamId: { type: 'string', description: 'Team ID (optional)' },
-    position: { type: 'string', description: 'Position in column (optional)' },
   },
   async run({ args }) {
+    const workItemId = parseId(args.cardId, 'card ID');
     try {
       const svc = getService(args);
       const result = await svc.moveCardOnBoard({
-        workItemId: Number(args.cardId),
+        workItemId,
         boardId: args.boardId!,
         columnId: args.columnId!,
         teamId: args.teamId,
-        position: args.position ? Number(args.position) : undefined,
       });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
@@ -110,9 +107,8 @@ const members = defineCommand({
       const svc = getService(args);
       const result = await svc.getTeamMembers({ teamId: args.teamId });
       console.log(format(result, args));
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
+    } catch (err) {
+      exitWithError(err);
     }
   },
 });
