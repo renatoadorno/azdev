@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
+import { EntraAuthHandler } from '../services/EntraAuthHandler';
 
 export const CONFIG_PATH = path.join(os.homedir(), '.config', 'azdev', 'config.json');
 
@@ -52,6 +53,7 @@ export function loadCliConfig(): AzureDevOpsConfig {
     config.auth = { type: 'basic', username: raw.username ?? '', password: raw.password ?? '' };
   } else if (authType === 'entra') {
     config.auth = { type: 'entra' };
+    config.entraAuthHandler = EntraAuthHandler.getInstance();
   } else {
     config.auth = { type: 'pat' };
   }

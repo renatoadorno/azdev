@@ -15,11 +15,13 @@ export class EntraAuthHandler implements IRequestHandler {
     this.credential = new DefaultAzureCredential();
   }
 
-  public static async getInstance(): Promise<EntraAuthHandler> {
+  // Token acquisition stays lazy: the first request goes out unauthenticated and
+  // the 401 challenge triggers handleAuthentication → ensureToken. This keeps
+  // getInstance synchronous for use in loadCliConfig.
+  public static getInstance(): EntraAuthHandler {
     if (!EntraAuthHandler.instance) {
       EntraAuthHandler.instance = new EntraAuthHandler();
     }
-    await EntraAuthHandler.instance.ensureToken();
     return EntraAuthHandler.instance;
   }
 
