@@ -33,7 +33,7 @@ azdev config set orgUrl https://dev.azure.com/myorg
 # 2. Set default project
 azdev config set project MyProject
 
-# 3. Set your PAT
+# 3. Set your PAT (stored in the OS keychain, never on disk)
 azdev config set personalAccessToken <your-pat>
 
 # 4. Start using it

@@ -65,7 +65,7 @@ bash scripts/install-dev.sh
 
 ## Initial Configuration
 
-azdev reads configuration from `~/.config/azdev/config.json`. Set it up with:
+azdev reads its non-secret configuration from `~/.config/azdev/config.json` and its credentials from the OS keychain. Set it up with:
 
 ```bash
 # Required: Azure DevOps organization URL
@@ -74,15 +74,20 @@ azdev config set orgUrl https://dev.azure.com/myorg
 # Required: default project
 azdev config set project MyProject
 
-# For PAT authentication (default)
+# For PAT authentication (default) — goes to the OS keychain, not to the file
 azdev config set personalAccessToken <your-token>
 ```
 
-Confirm the config is correct:
+Confirm the config is correct. `config show` prints where the credential comes
+from (`credentialSource`), never the credential itself:
 
 ```bash
 azdev config show
 ```
+
+If you already had a `config.json` with the token in plain text, the next command
+moves it to the keychain automatically and tightens the file to `0600`. Rotate that
+token afterwards — it was readable on disk.
 
 For other authentication methods (Entra ID, NTLM, Basic), see [configuration.md](./configuration.md).
 

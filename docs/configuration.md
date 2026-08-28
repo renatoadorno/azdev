@@ -1,11 +1,12 @@
 # Configuration
 
-azdev stores its configuration in `~/.config/azdev/config.json`. All values can be set with:
+azdev stores its non-secret configuration in `~/.config/azdev/config.json` (mode `0600`) and its credentials in the operating system's credential store — Keychain on macOS, libsecret on Linux, Credential Manager on Windows. Tokens and passwords are never written to disk in plain text.
 
 ```bash
 azdev config set <key> <value>
 azdev config get <key>
 azdev config show
+azdev config unset <key>
 ```
 
 ## Config Keys
@@ -14,14 +15,49 @@ azdev config show
 |---|---|---|
 | `orgUrl` | Yes | Organization URL, e.g. `https://dev.azure.com/myorg` |
 | `project` | Yes | Default project name |
-| `personalAccessToken` | PAT auth | Personal Access Token |
+| `personalAccessToken` | PAT auth | Personal Access Token — stored in the OS keychain, not in the file |
 | `authType` | No | Auth method: `pat` (default), `entra`, `ntlm`, `basic` |
 | `isOnPremises` | No | Set to `true` for TFS / Azure DevOps Server |
 | `collection` | On-prem only | Collection name (e.g. `DefaultCollection`) |
 | `apiVersion` | On-prem only | API version header (e.g. `5.0`) |
 | `username` | NTLM / Basic | Username |
-| `password` | NTLM / Basic | Password |
+| `password` | NTLM / Basic | Password — stored in the OS keychain, not in the file |
 | `domain` | NTLM only | Windows domain |
+
+## Credential Storage
+
+`personalAccessToken` and `password` are routed to the OS keychain by `azdev config set` and never reach `config.json`. They are looked up under the service `com.azdev.cli`, scoped by organization (`pat:<orgUrl>`, `password:<orgUrl>`), so several organizations can coexist.
+
+Resolution order at runtime:
+
+1. Environment variable — `AZDEV_PAT` for the token, `AZDEV_PASSWORD` for NTLM/Basic
+2. OS keychain
+3. Otherwise the command fails with exit code 2
+
+There is no fallback to the config file. On a machine without a keychain service (a container, or Linux without libsecret), use the environment variable.
+
+```bash
+azdev config set personalAccessToken <your-token>   # stores in the keychain
+azdev config show                                   # prints credentialSource, never the value
+azdev config unset personalAccessToken              # removes it from the keychain
+
+AZDEV_PAT=<token> azdev workitem mine               # one-off override, e.g. in CI
+```
+
+### Migrating an existing config
+
+A `config.json` still holding a `personalAccessToken` or `password` in plain text is migrated automatically on the next command: the value moves to the keychain, the key is stripped from the file, and the file is tightened to `0600`. The migration is announced on stderr and happens only once. If the keychain write fails, the file is left untouched and the command exits 2 — the credential is never destroyed by a failed migration.
+
+Because the token was readable on disk before the migration, rotate it afterwards.
+
+### Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `AZDEV_PAT` | Personal Access Token; takes precedence over the keychain |
+| `AZDEV_PASSWORD` | NTLM / Basic password; takes precedence over the keychain |
+| `AZDEV_CONFIG_PATH` | Full path to an alternative config file |
+| `XDG_CONFIG_HOME` | Base config directory, used when `AZDEV_CONFIG_PATH` is unset |
 
 ## Authentication Types
 
@@ -108,9 +144,8 @@ azdev sprint current --project AnotherProject
 {
   "orgUrl": "https://dev.azure.com/myorg",
   "project": "MyProject",
-  "personalAccessToken": "xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "authType": "pat"
 }
 ```
 
-The file is plain JSON and can be edited directly.
+The file is plain JSON and can be edited directly — but credentials do not belong in it. A token added by hand is migrated to the keychain on the next command, and is redacted from `azdev config show` in the meantime.

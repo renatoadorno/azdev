@@ -18,15 +18,23 @@ bun run build.js
 bash install.sh          # install only (binary must exist)
 bun run build:install    # build + install
 bun run install:cli      # install only (via npm script)
+
+# Tests and types
+bun run test             # bun test — unit suite, mocks the keychain
+bun run typecheck        # bunx tsc --noEmit
+AZDEV_TEST_KEYCHAIN=1 bun test   # also exercises the real OS keychain
 ```
 
-There are no automated tests. TypeScript type checking is done implicitly by Bun at runtime; to check types without running, use `bunx tsc --noEmit`.
+Tests live in `test/` and cover the config/credential layer only (`bun test`). They
+isolate themselves with `AZDEV_CONFIG_PATH` pointing at a tmpdir and mock
+`src/cli/secrets.ts`; `test/secrets.test.ts` spies on `Bun.secrets` directly.
+The rest of the codebase has no automated tests.
 
 ## Architecture
 
 This repo exposes Azure DevOps **task and project management** capabilities via a CLI:
 
-- **CLI** (`dist/azdev`) — uses `citty`, outputs toon-format by default (token-efficient), with `--json` and `--markdown` flags
+- **CLI** (`dist/azdev-*`) — uses `citty`, outputs toon-format by default (token-efficient), with `--json` and `--markdown` flags
 
 **Active modules:** WorkItems, BoardsSprints, Projects, Metadata.
 
@@ -43,8 +51,13 @@ src/
     *Service.ts     — Domain services extending AzureDevOpsService
   cli/
     index.ts        — CLI entry point (citty), registers command groups
-    config.ts       — loadCliConfig() / writeCliConfig() → ~/.config/azdev/config.json
-    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, PAT hint on 401) + exit
+    command.ts      — globalOptions + runService()/runCommand(): the body every
+                      subcommand shares (load config, apply --project, format, handle errors)
+    config.ts       — configPath() / loadCliConfig() / writeCliConfig() / unsetCliConfig()
+                      Non-secret config → ~/.config/azdev/config.json (mode 0600)
+    secrets.ts      — Bun.secrets wrapper: resolveSecret/storeSecret/deleteSecret/redactSecrets
+                      Credentials live in the OS keychain (service com.azdev.cli)
+    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
     parsers.ts      — parseId(): positive-integer validation for work item IDs
     commands/       — One file per command group; each calls services directly
       workitem.ts   — 14 subcommands
@@ -52,20 +65,28 @@ src/
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
       metadata.ts   — 2 subcommands (types, tags)
-      config.ts     — show / set / get
+      config.ts     — show / set / get / unset
     formatters/
       index.ts      — format(data, flags) selector
       toon.ts       — encode() from @toon-format/toon (default)
       json.ts       — JSON.stringify
       markdown.ts   — Markdown table for arrays, key:value for objects
+test/               — bun test suite for the config/credential layer
+  helpers.ts        — env guard, tmpdir config, process.exit/console.error capture
 ```
+
+`loadCliConfig()` is **async** (the keychain API is): every `getService()` in
+`cli/commands/*` awaits it.
 
 ### Binaries
 
 | Binary | Platform | Entry point |
 |---|---|---|
-| `dist/azdev` | darwin-arm64 | `src/cli/index.ts` |
-| `dist/azdev-linux` | linux-x64 | `src/cli/index.ts` |
+| `dist/azdev-darwin-arm64` | darwin-arm64 | `src/cli/index.ts` |
+| `dist/azdev-linux-x64` | linux-x64 | `src/cli/index.ts` |
+
+Built with `--compile --minify --bytecode`, and `--define BUILD_VERSION` carrying
+`package.json`'s version — bump it there and the binaries follow.
 
 ### Data flow
 
@@ -78,23 +99,38 @@ src/
 
 1. Add param interface to the appropriate `src/interfaces/*.ts` file
 2. Add method to the relevant `*Service.ts` in `src/services/` (extending `AzureDevOpsService`)
-3. Add subcommand to the relevant `src/cli/commands/*.ts`, calling the service directly
+3. Add the subcommand to the relevant `src/cli/commands/*.ts`:
+
+```ts
+const mine = defineCommand({
+  meta: { name: 'mine', description: '...' },
+  args: { ...globalOptions, top: { type: 'string', description: '...' } },
+  async run({ args }) {
+    await runService(WorkItemService, args, (svc) => svc.getMyWorkItems({ top: args.top }));
+  },
+});
+```
+
+`runService` owns the shared body — config load, `--project` override, output
+formatting and `exitWithError`. Do not re-implement it per subcommand. Argument
+parsing that must run *before* the call (e.g. `parseId`) stays above it; a
+non-default view goes in an `async` callback that returns the value to print.
 
 ### Exit codes
 
 - `0` — success
 - `1` — error (API failures via `exitWithError`, invalid IDs, invalid flag values)
-- `2` — config file missing or incomplete (`loadCliConfig` / `config show`)
+- `2` — config file missing/invalid, incomplete, or no credential found (`loadCliConfig` / `config show`)
 
 ## Configuration
 
-The CLI reads from `~/.config/azdev/config.json`:
+Non-secret config lives in `~/.config/azdev/config.json` (mode `0600`); credentials
+live in the OS keychain and never touch the file.
 
 ```json
 {
   "orgUrl": "https://dev.azure.com/myorg",
   "project": "MyProject",
-  "personalAccessToken": "xxx",
   "authType": "pat"
 }
 ```
@@ -105,13 +141,30 @@ Set values with: `azdev config set orgUrl https://dev.azure.com/myorg`
 |---|---|---|
 | `orgUrl` | Yes | Org URL, e.g. `https://dev.azure.com/myorg` |
 | `project` | Yes | Default project name |
-| `personalAccessToken` | For PAT | PAT token |
+| `personalAccessToken` | For PAT | PAT token — **OS keychain**, not the file |
+| `password` | NTLM / Basic | Password — **OS keychain**, not the file |
 | `authType` | No | `pat` (default), `entra`, `ntlm`, `basic` |
 | `isOnPremises` | No | `true` for TFS/Azure DevOps Server |
 | `collection` | On-prem only | Collection name |
 | `apiVersion` | On-prem only | API version header |
 
-`entra` auth uses `DefaultAzureCredential` from `@azure/identity` (supports managed identity, Azure CLI, env vars, etc.) and is cloud-only.
+### Credentials
+
+Resolution order: env var → OS keychain → exit 2. **There is no fallback to the file.**
+
+| Variable | Purpose |
+|---|---|
+| `AZDEV_PAT` | PAT; wins over the keychain |
+| `AZDEV_PASSWORD` | NTLM/Basic password; wins over the keychain |
+| `AZDEV_CONFIG_PATH` | Override the full config file path (used by tests) |
+| `XDG_CONFIG_HOME` | Config base dir when `AZDEV_CONFIG_PATH` is unset |
+
+Keychain entries: service `com.azdev.cli`, name `pat:<orgUrl>` / `password:<orgUrl>`.
+A legacy `config.json` holding a plain-text credential is migrated on the next
+command — the key is only stripped from disk after the keychain write succeeds.
+`config show` redacts credentials and reports `credentialSource`.
+
+`entra` auth uses `DefaultAzureCredential` from `@azure/identity` (supports managed identity, Azure CLI, env vars, etc.), is cloud-only, and reads no credential from config.
 
 ## CLI Output Formats
 

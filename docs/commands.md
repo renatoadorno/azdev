@@ -847,7 +847,9 @@ CLI configuration management.
 
 ### `config show`
 
-Show the full contents of the config file.
+Show the config file contents. Credentials (`personalAccessToken`, `password`) are
+always redacted as `***`; a `credentialSource` field reports where the credential is
+resolved from — `env`, `keychain` or `none`.
 
 ```
 azdev config show
@@ -864,7 +866,9 @@ azdev config show --json
 
 ### `config set`
 
-Set a configuration value.
+Set a configuration value. `personalAccessToken` and `password` go to the OS
+keychain instead of the config file; every other key is written to
+`~/.config/azdev/config.json` with mode `0600`.
 
 ```
 azdev config set <key> <value>
@@ -881,6 +885,7 @@ azdev config set <key> <value>
 azdev config set orgUrl https://dev.azure.com/myorg
 azdev config set project MyProject
 azdev config set authType entra
+azdev config set personalAccessToken <your-token>   # stored in the keychain
 ```
 
 For all available keys, see [configuration.md](./configuration.md).
@@ -899,9 +904,34 @@ azdev config get <key>
 |---|---|---|
 | `key` | string | Config key name |
 
+Credential keys return `***` rather than the stored value.
+
 **Examples:**
 
 ```bash
 azdev config get orgUrl
 azdev config get project
+```
+
+---
+
+### `config unset`
+
+Remove a configuration value, or delete a stored credential from the OS keychain.
+
+```
+azdev config unset <key>
+```
+
+| Argument | Type | Description |
+|---|---|---|
+| `key` | string | Config key name |
+
+Exits `1` when the key was not set.
+
+**Examples:**
+
+```bash
+azdev config unset collection
+azdev config unset personalAccessToken   # removes it from the keychain
 ```
