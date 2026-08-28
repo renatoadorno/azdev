@@ -31,7 +31,7 @@
   "dependencies": {
     "@azure/identity": "^4.10.2",
     "@toon-format/toon": "^2.1.0",
-    "azure-devops-node-api": "^15.1.0",
+    "azure-devops-node-api": "^16.0.0",
     "citty": "^0.2.1"
   }
 }
