@@ -1,6 +1,6 @@
 {
   "name": "azdev",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Azure DevOps task and project management CLI",
   "module": "src/cli/index.ts",
   "type": "module",

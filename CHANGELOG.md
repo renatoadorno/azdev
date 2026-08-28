@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-28
+
 ### Changed
 
 - Upgraded `azure-devops-node-api` to 16.0.0. No change was needed on the CLI side.
@@ -120,7 +122,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/renatoadorno/azdev/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/renatoadorno/azdev/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/renatoadorno/azdev/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/renatoadorno/azdev/compare/v0.2.0...v0.3.0
