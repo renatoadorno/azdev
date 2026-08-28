@@ -1,6 +1,6 @@
 {
   "name": "azdev",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Azure DevOps task and project management CLI",
   "module": "src/cli/index.ts",
   "type": "module",
@@ -23,6 +23,8 @@
   },
   "scripts": {
     "dev:cli": "bun run src/cli/index.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
     "build:install": "bun run build.js && bash scripts/install-dev.sh",
     "install:cli": "bash scripts/install-dev.sh"
   },

@@ -7,8 +7,13 @@ import project from './commands/project';
 import metadata from './commands/metadata';
 import config from './commands/config';
 
+// Injected at compile time by build.js (--define). Undefined when running from
+// source, where package.json is the source of truth.
+declare const BUILD_VERSION: string | undefined;
+const version = typeof BUILD_VERSION === 'string' ? BUILD_VERSION : pkg.version;
+
 const main = defineCommand({
-  meta: { name: 'azdev', version: pkg.version, description: 'Azure DevOps CLI — optimized for AI consumers' },
+  meta: { name: 'azdev', version, description: 'Azure DevOps CLI — optimized for AI consumers' },
   subCommands: { workitem, sprint, board, project, metadata, config },
 });
 
