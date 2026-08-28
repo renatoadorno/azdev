@@ -1,21 +1,7 @@
 import { defineCommand } from 'citty';
 import { BoardsSprintsService } from '../../services/BoardsSprintsService';
-import { loadCliConfig } from '../config';
-import { exitWithError } from '../errors';
-import { format } from '../formatters/index';
+import { globalOptions, runService } from '../command';
 import { parseId } from '../parsers';
-
-const globalOptions = {
-  json: { type: 'boolean' as const, description: 'Output as JSON' },
-  markdown: { type: 'boolean' as const, description: 'Output as Markdown' },
-  project: { type: 'string' as const, description: 'Override project from config' },
-};
-
-function getService(options: { project?: string }) {
-  const config = loadCliConfig();
-  if (options.project) config.project = options.project;
-  return new BoardsSprintsService(config);
-}
 
 const list = defineCommand({
   meta: { name: 'list', description: 'List all boards' },
@@ -24,13 +10,7 @@ const list = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getBoards({ teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getBoards({ teamId: args.teamId }));
   },
 });
 
@@ -42,13 +22,7 @@ const columns = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getBoardColumns({ boardId: args.boardId!, teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getBoardColumns({ boardId: args.boardId!, teamId: args.teamId }));
   },
 });
 
@@ -60,13 +34,7 @@ const boardItems = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getBoardItems({ boardId: args.boardId!, teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getBoardItems({ boardId: args.boardId!, teamId: args.teamId }));
   },
 });
 
@@ -81,18 +49,14 @@ const move = defineCommand({
   },
   async run({ args }) {
     const workItemId = parseId(args.cardId, 'card ID');
-    try {
-      const svc = getService(args);
-      const result = await svc.moveCardOnBoard({
+    await runService(BoardsSprintsService, args, (svc) =>
+      svc.moveCardOnBoard({
         workItemId,
         boardId: args.boardId!,
         columnId: args.columnId!,
         teamId: args.teamId,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -103,13 +67,7 @@ const members = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getTeamMembers({ teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getTeamMembers({ teamId: args.teamId }));
   },
 });
 

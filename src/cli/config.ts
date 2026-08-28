@@ -3,33 +3,143 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import { EntraAuthHandler } from '../services/EntraAuthHandler';
+import {
+  SECRET_CONFIG_KEYS,
+  SECRET_SERVICE,
+  configKeyFor,
+  deleteSecret,
+  envVarFor,
+  resolveSecret,
+  secretKindForKey,
+  storeSecret,
+  type SecretKind,
+} from './secrets';
 
-export const CONFIG_PATH = path.join(os.homedir(), '.config', 'azdev', 'config.json');
+export function configPath(): string {
+  const override = process.env.AZDEV_CONFIG_PATH;
+  if (override) return override;
+  const base = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config');
+  return path.join(base, 'azdev', 'config.json');
+}
 
 interface RawCliConfig {
   orgUrl?: string;
   project?: string;
-  personalAccessToken?: string;
   authType?: string;
   isOnPremises?: boolean;
   collection?: string | null;
   apiVersion?: string | null;
   username?: string;
-  password?: string;
   domain?: string;
+  /** Credentials belong in the keychain; these only survive in legacy files. */
+  personalAccessToken?: string;
+  password?: string;
 }
 
-export function loadCliConfig(): AzureDevOpsConfig {
-  let raw: RawCliConfig = {};
+/** Reads the config file. Returns null when it does not exist; exits 2 when it is malformed. */
+export function readConfigFile(): RawCliConfig | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(configPath(), 'utf-8');
+  } catch {
+    return null;
+  }
 
   try {
-    const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    raw = JSON.parse(content);
-  } catch {
-    console.error(`Config file not found at ${CONFIG_PATH}.`);
-    console.error("Run 'azdev config set orgUrl ...' to configure.");
+    return JSON.parse(content) as RawCliConfig;
+  } catch (err) {
+    console.error(`Config file at ${configPath()} is not valid JSON: ${(err as Error).message}`);
+    console.error('Fix the file or delete it and reconfigure.');
     process.exit(2);
   }
+}
+
+/** Same as readConfigFile, but a missing file is fatal. */
+export function requireConfigFile(): RawCliConfig {
+  const raw = readConfigFile();
+  if (raw) return raw;
+
+  console.error(`Config file not found at ${configPath()}.`);
+  console.error("Run 'azdev config set orgUrl ...' to configure.");
+  process.exit(2);
+}
+
+function writeConfigFile(data: Record<string, unknown>): void {
+  const file = configPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  // mode above only applies when the file is created; chmod fixes pre-existing 0644 files.
+  fs.chmodSync(file, 0o600);
+}
+
+function warnIfWorldReadable(): void {
+  try {
+    const { mode } = fs.statSync(configPath());
+    if ((mode & 0o077) === 0) return;
+    console.error(
+      `Warning: ${configPath()} is mode ${(mode & 0o777).toString(8)} — readable by other users. Fix with: chmod 600 ${configPath()}`,
+    );
+  } catch {
+    // unreadable file is already reported by requireConfigFile
+  }
+}
+
+/**
+ * Moves credentials found in the plain-text config into the OS keychain, once.
+ * A key is only dropped from disk after its keychain write succeeds — otherwise
+ * a failing keychain would destroy the only copy of the credential.
+ */
+async function migrateInlineSecrets(raw: Record<string, unknown>, orgUrl: string): Promise<void> {
+  const migrated: string[] = [];
+
+  for (const key of SECRET_CONFIG_KEYS) {
+    const value = raw[key];
+    if (typeof value !== 'string' || value === '') continue;
+
+    const kind = secretKindForKey(key)!;
+    try {
+      await storeSecret(kind, orgUrl, value);
+    } catch (err) {
+      console.error(`Warning: could not move ${key} to the OS keychain: ${(err as Error)?.message ?? err}`);
+      console.error(`It stays in plain text at ${configPath()} and will not be used. Set ${envVarFor(kind)} instead.`);
+      continue;
+    }
+    delete raw[key];
+    migrated.push(key);
+  }
+
+  if (migrated.length === 0) return;
+
+  const onDisk = readConfigFile() as Record<string, unknown>;
+  for (const key of migrated) delete onDisk[key];
+  writeConfigFile(onDisk);
+
+  console.error(`Moved ${migrated.join(' and ')} from ${configPath()} to the OS keychain (service ${SECRET_SERVICE}).`);
+}
+
+async function requireSecret(kind: SecretKind, orgUrl: string): Promise<string> {
+  const { value, error } = await resolveSecret(kind, orgUrl);
+  if (value) return value;
+
+  const key = configKeyFor(kind);
+  console.error(`No ${key} found for ${orgUrl}.`);
+  if (error) console.error(`Keychain lookup failed: ${error}`);
+  console.error(`Store it with 'azdev config set ${key} <value>', or set ${envVarFor(kind)}.`);
+  process.exit(2);
+}
+
+function requireOrgUrl(): string {
+  const { orgUrl } = requireConfigFile();
+  if (orgUrl) return orgUrl;
+
+  console.error('Set orgUrl before storing credentials:');
+  console.error('  azdev config set orgUrl https://dev.azure.com/<org>');
+  process.exit(2);
+}
+
+export async function loadCliConfig(): Promise<AzureDevOpsConfig> {
+  const raw = requireConfigFile();
+  warnIfWorldReadable();
 
   if (!raw.orgUrl || !raw.project) {
     console.error('Config is missing required fields: orgUrl and project.');
@@ -37,42 +147,55 @@ export function loadCliConfig(): AzureDevOpsConfig {
     process.exit(2);
   }
 
+  await migrateInlineSecrets(raw as Record<string, unknown>, raw.orgUrl);
+
   const config: AzureDevOpsConfig = {
     orgUrl: raw.orgUrl,
     project: raw.project,
-    personalAccessToken: raw.personalAccessToken ?? '',
+    personalAccessToken: '',
     isOnPremises: raw.isOnPremises ?? false,
     collection: raw.collection ?? undefined,
     apiVersion: raw.apiVersion ?? undefined,
   };
 
   const authType = raw.authType ?? 'pat';
-  if (authType === 'ntlm') {
-    config.auth = { type: 'ntlm', username: raw.username ?? '', password: raw.password ?? '', domain: raw.domain };
-  } else if (authType === 'basic') {
-    config.auth = { type: 'basic', username: raw.username ?? '', password: raw.password ?? '' };
-  } else if (authType === 'entra') {
+
+  if (authType === 'entra') {
     config.auth = { type: 'entra' };
     config.entraAuthHandler = EntraAuthHandler.getInstance();
+  } else if (authType === 'ntlm' || authType === 'basic') {
+    const username = raw.username ?? '';
+    const password = await requireSecret('password', raw.orgUrl);
+    config.auth =
+      authType === 'ntlm' ? { type: 'ntlm', username, password, domain: raw.domain } : { type: 'basic', username, password };
   } else {
     config.auth = { type: 'pat' };
+    config.personalAccessToken = await requireSecret('pat', raw.orgUrl);
   }
 
   return config;
 }
 
-export function writeCliConfig(key: string, value: unknown): void {
-  const dir = path.dirname(CONFIG_PATH);
-  fs.mkdirSync(dir, { recursive: true });
-
-  let existing: Record<string, unknown> = {};
-  try {
-    const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    existing = JSON.parse(content);
-  } catch {
-    // start fresh if file doesn't exist or is invalid
+export async function writeCliConfig(key: string, value: unknown): Promise<void> {
+  const kind = secretKindForKey(key);
+  if (kind) {
+    await storeSecret(kind, requireOrgUrl(), String(value));
+    return;
   }
 
+  const existing = (readConfigFile() ?? {}) as Record<string, unknown>;
   existing[key] = value;
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(existing, null, 2), 'utf-8');
+  writeConfigFile(existing);
+}
+
+export async function unsetCliConfig(key: string): Promise<boolean> {
+  const kind = secretKindForKey(key);
+  if (kind) return deleteSecret(kind, requireOrgUrl());
+
+  const existing = readConfigFile() as Record<string, unknown> | null;
+  if (!existing || !(key in existing)) return false;
+
+  delete existing[key];
+  writeConfigFile(existing);
+  return true;
 }

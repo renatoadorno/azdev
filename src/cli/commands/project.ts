@@ -1,20 +1,6 @@
 import { defineCommand } from 'citty';
 import { ProjectService } from '../../services/ProjectService';
-import { loadCliConfig } from '../config';
-import { exitWithError } from '../errors';
-import { format } from '../formatters/index';
-
-const globalOptions = {
-  json: { type: 'boolean' as const, description: 'Output as JSON' },
-  markdown: { type: 'boolean' as const, description: 'Output as Markdown' },
-  project: { type: 'string' as const, description: 'Override project from config' },
-};
-
-function getService(options: { project?: string }) {
-  const config = loadCliConfig();
-  if (options.project) config.project = options.project;
-  return new ProjectService(config);
-}
+import { globalOptions, runService } from '../command';
 
 const list = defineCommand({
   meta: { name: 'list', description: 'List projects' },
@@ -25,17 +11,13 @@ const list = defineCommand({
     state: { type: 'string', description: 'State filter (all, wellFormed, etc.)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.listProjects({
+    await runService(ProjectService, args, (svc) =>
+      svc.listProjects({
         top: args.top ? Number(args.top) : undefined,
         skip: args.skip ? Number(args.skip) : undefined,
         stateFilter: args.state as any,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -47,16 +29,12 @@ const get = defineCommand({
     capabilities: { type: 'boolean', description: 'Include capabilities' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getProjectDetails({
+    await runService(ProjectService, args, (svc) =>
+      svc.getProjectDetails({
         projectId: args.projectId!,
         includeCapabilities: args.capabilities,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -69,20 +47,16 @@ const create = defineCommand({
     visibility: { type: 'string', description: 'Visibility: private or public', default: 'private' },
   },
   async run({ args }) {
-    try {
+    await runService(ProjectService, args, (svc) => {
       if (args.visibility !== 'private' && args.visibility !== 'public') {
         throw new Error(`Invalid --visibility "${args.visibility}": must be "private" or "public"`);
       }
-      const svc = getService(args);
-      const result = await svc.createProject({
+      return svc.createProject({
         name: args.name!,
         description: args.description,
         visibility: args.visibility,
       });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    });
   },
 });
 
@@ -93,15 +67,11 @@ const areas = defineCommand({
     projectId: { type: 'positional', description: 'Project ID or name', required: true },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getAreas({
+    await runService(ProjectService, args, (svc) =>
+      svc.getAreas({
         projectId: args.projectId!,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -112,13 +82,7 @@ const iterations = defineCommand({
     projectId: { type: 'positional', description: 'Project ID or name', required: true },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getIterations({ projectId: args.projectId! });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(ProjectService, args, (svc) => svc.getIterations({ projectId: args.projectId! }));
   },
 });
 
@@ -131,17 +95,13 @@ const createArea = defineCommand({
     parentPath: { type: 'string', description: 'Parent area path' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.createArea({
+    await runService(ProjectService, args, (svc) =>
+      svc.createArea({
         projectId: args.projectId!,
         name: args.name!,
         parentPath: args.parentPath,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -156,19 +116,15 @@ const createIteration = defineCommand({
     finishDate: { type: 'string', description: 'Finish date (ISO)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.createIteration({
+    await runService(ProjectService, args, (svc) =>
+      svc.createIteration({
         projectId: args.projectId!,
         name: args.name!,
         parentPath: args.parentPath,
         startDate: args.startDate,
         finishDate: args.finishDate,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -176,13 +132,7 @@ const processes = defineCommand({
   meta: { name: 'processes', description: 'Get available processes' },
   args: { ...globalOptions },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getProcesses({});
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(ProjectService, args, (svc) => svc.getProcesses({}));
   },
 });
 
@@ -196,13 +146,7 @@ const workItemTypes = defineCommand({
     processId: { type: 'positional', description: 'Process ID', required: true },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getWorkItemTypes({ processId: args.processId! });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(ProjectService, args, (svc) => svc.getWorkItemTypes({ processId: args.processId! }));
   },
 });
 
@@ -214,16 +158,12 @@ const workItemFields = defineCommand({
     witRefName: { type: 'string', description: 'Work item type reference name', required: true },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getWorkItemTypeFields({
+    await runService(ProjectService, args, (svc) =>
+      svc.getWorkItemTypeFields({
         processId: args.processId!,
         witRefName: args.witRefName!,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 

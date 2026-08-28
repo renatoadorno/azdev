@@ -1,20 +1,6 @@
 import { defineCommand } from 'citty';
 import { MetadataService } from '../../services/MetadataService';
-import { loadCliConfig } from '../config';
-import { exitWithError } from '../errors';
-import { format } from '../formatters/index';
-
-const globalOptions = {
-  json: { type: 'boolean' as const, description: 'Output as JSON' },
-  markdown: { type: 'boolean' as const, description: 'Output as Markdown' },
-  project: { type: 'string' as const, description: 'Override project from config' },
-};
-
-function getService(options: { project?: string }) {
-  const config = loadCliConfig();
-  if (options.project) config.project = options.project;
-  return new MetadataService(config);
-}
+import { globalOptions, runService } from '../command';
 
 function slimType(t: any) {
   return {
@@ -32,14 +18,10 @@ const types = defineCommand({
     raw: { type: 'boolean', description: 'Return the full raw types (color, icon, fields, transitions)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
+    await runService(MetadataService, args, async (svc) => {
       const result = await svc.getWorkItemTypes();
-      const view = args.raw ? result : result.map(slimType);
-      console.log(format(view, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      return args.raw ? result : result.map(slimType);
+    });
   },
 });
 
@@ -50,14 +32,10 @@ const tags = defineCommand({
     raw: { type: 'boolean', description: 'Return the full raw tags (id, lastUpdated, url)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
+    await runService(MetadataService, args, async (svc) => {
       const result = await svc.getTags();
-      const view = args.raw ? result : result.map((t: any) => ({ name: t.name }));
-      console.log(format(view, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      return args.raw ? result : result.map((t: any) => ({ name: t.name }));
+    });
   },
 });
 

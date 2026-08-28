@@ -1,9 +1,7 @@
 import { defineCommand } from 'citty';
 import { WorkItemService } from '../../services/WorkItemService';
 import { slimWorkItem } from '../../services/workItemUtils';
-import { loadCliConfig } from '../config';
-import { exitWithError } from '../errors';
-import { format } from '../formatters/index';
+import { globalOptions, runService } from '../command';
 import { parseId } from '../parsers';
 
 function parseCsv(value?: string): string[] | undefined {
@@ -21,18 +19,6 @@ function parseRichTextFormat(value?: string): 'html' | 'markdown' | undefined {
   return value;
 }
 
-const globalOptions = {
-  json: { type: 'boolean' as const, description: 'Output as JSON' },
-  markdown: { type: 'boolean' as const, description: 'Output as Markdown' },
-  project: { type: 'string' as const, description: 'Override project from config' },
-};
-
-function getService(options: { project?: string }) {
-  const config = loadCliConfig();
-  if (options.project) config.project = options.project;
-  return new WorkItemService(config);
-}
-
 const list = defineCommand({
   meta: { name: 'list', description: 'List work items via WIQL query' },
   args: {
@@ -40,13 +26,7 @@ const list = defineCommand({
     query: { type: 'string', description: 'WIQL query string', default: "SELECT [System.Id], [System.Title], [System.State] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.CreatedDate] DESC" },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.listWorkItems(args.query!);
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.listWorkItems(args.query!));
   },
 });
 
@@ -60,15 +40,11 @@ const get = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const fields = parseCsv(args.fields);
+    const fields = parseCsv(args.fields);
+    await runService(WorkItemService, args, async (svc) => {
       const result = await svc.getWorkItemById({ id, fields });
-      const view = args.raw ? result : slimWorkItem(result, fields);
-      console.log(format(view, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      return args.raw ? result : slimWorkItem(result, fields);
+    });
   },
 });
 
@@ -85,20 +61,16 @@ const children = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const result = await svc.getChildWorkItems({
+    await runService(WorkItemService, args, (svc) =>
+      svc.getChildWorkItems({
         id,
         recursive: args.recursive,
         mine: args.mine,
         openOnly: args.open,
         state: args.state,
         type: args.type,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -110,13 +82,7 @@ const history = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const result = await svc.getWorkItemHistory({ id });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.getWorkItemHistory({ id }));
   },
 });
 
@@ -128,13 +94,7 @@ const search = defineCommand({
     top: { type: 'string', description: 'Max results' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.searchWorkItems({ searchText: args.query!, top: args.top ? Number(args.top) : undefined });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.searchWorkItems({ searchText: args.query!, top: args.top ? Number(args.top) : undefined }));
   },
 });
 
@@ -146,13 +106,7 @@ const recent = defineCommand({
     skip: { type: 'string', description: 'Skip N results', default: '0' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getRecentWorkItems({ top: Number(args.top), skip: Number(args.skip) });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.getRecentWorkItems({ top: Number(args.top), skip: Number(args.skip) }));
   },
 });
 
@@ -166,13 +120,7 @@ const mine = defineCommand({
     top: { type: 'string', description: 'Max results', default: '100' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getMyWorkItems({ path: args.path!, state: args.state, openOnly: args.open, top: Number(args.top) });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.getMyWorkItems({ path: args.path!, state: args.state, openOnly: args.open, top: Number(args.top) }));
   },
 });
 
@@ -191,9 +139,8 @@ const create = defineCommand({
   },
   async run({ args }) {
     const richTextFormat = parseRichTextFormat(args.format);
-    try {
-      const svc = getService(args);
-      const result = await svc.createWorkItem({
+    await runService(WorkItemService, args, (svc) =>
+      svc.createWorkItem({
         workItemType: args.type!,
         title: args.title!,
         description: args.description,
@@ -202,11 +149,8 @@ const create = defineCommand({
         areaPath: args.areaPath,
         iterationPath: args.iterationPath,
         format: richTextFormat,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -221,14 +165,9 @@ const update = defineCommand({
   async run({ args }) {
     const id = parseId(args.id);
     const richTextFormat = parseRichTextFormat(args.format);
-    try {
-      const svc = getService(args);
-      const fields = JSON.parse(args.fields!);
-      const result = await svc.updateWorkItem({ id, fields, format: richTextFormat });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) =>
+      svc.updateWorkItem({ id, fields: JSON.parse(args.fields!), format: richTextFormat }),
+    );
   },
 });
 
@@ -241,13 +180,7 @@ const comment = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const result = await svc.addWorkItemComment({ id, text: args.text! });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.addWorkItemComment({ id, text: args.text! }));
   },
 });
 
@@ -261,13 +194,7 @@ const setState = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const result = await svc.updateWorkItemState({ id, state: args.state!, comment: args.comment });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.updateWorkItemState({ id, state: args.state!, comment: args.comment }));
   },
 });
 
@@ -280,13 +207,7 @@ const assign = defineCommand({
   },
   async run({ args }) {
     const id = parseId(args.id);
-    try {
-      const svc = getService(args);
-      const result = await svc.assignWorkItem({ id, assignedTo: args.to! });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.assignWorkItem({ id, assignedTo: args.to! }));
   },
 });
 
@@ -302,18 +223,14 @@ const link = defineCommand({
   async run({ args }) {
     const sourceId = parseId(args.id, 'source work item ID');
     const targetId = parseId(args.targetId, 'target work item ID');
-    try {
-      const svc = getService(args);
-      const result = await svc.createLink({
+    await runService(WorkItemService, args, (svc) =>
+      svc.createLink({
         sourceId,
         targetId,
         linkType: args.linkType!,
         comment: args.comment,
-      });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+      }),
+    );
   },
 });
 
@@ -324,14 +241,7 @@ const bulkCreate = defineCommand({
     items: { type: 'string', description: 'JSON array of work item create/update params', required: true },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const workItems = JSON.parse(args.items!);
-      const result = await svc.bulkUpdateWorkItems({ workItems });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(WorkItemService, args, (svc) => svc.bulkUpdateWorkItems({ workItems: JSON.parse(args.items!) }));
   },
 });
 

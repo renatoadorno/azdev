@@ -1,20 +1,6 @@
 import { defineCommand } from 'citty';
 import { BoardsSprintsService } from '../../services/BoardsSprintsService';
-import { loadCliConfig } from '../config';
-import { exitWithError } from '../errors';
-import { format } from '../formatters/index';
-
-const globalOptions = {
-  json: { type: 'boolean' as const, description: 'Output as JSON' },
-  markdown: { type: 'boolean' as const, description: 'Output as Markdown' },
-  project: { type: 'string' as const, description: 'Override project from config' },
-};
-
-function getService(options: { project?: string }) {
-  const config = loadCliConfig();
-  if (options.project) config.project = options.project;
-  return new BoardsSprintsService(config);
-}
+import { globalOptions, runService } from '../command';
 
 const list = defineCommand({
   meta: { name: 'list', description: 'List all sprints' },
@@ -23,13 +9,7 @@ const list = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getSprints({ teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getSprints({ teamId: args.teamId }));
   },
 });
 
@@ -40,13 +20,7 @@ const current = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getCurrentSprint({ teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getCurrentSprint({ teamId: args.teamId }));
   },
 });
 
@@ -58,13 +32,7 @@ const items = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getSprintWorkItems({ sprintId: args.sprintId!, teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getSprintWorkItems({ sprintId: args.sprintId!, teamId: args.teamId }));
   },
 });
 
@@ -76,13 +44,7 @@ const capacity = defineCommand({
     teamId: { type: 'string', description: 'Team ID (optional)' },
   },
   async run({ args }) {
-    try {
-      const svc = getService(args);
-      const result = await svc.getSprintCapacity({ sprintId: args.sprintId!, teamId: args.teamId });
-      console.log(format(result, args));
-    } catch (err) {
-      exitWithError(err);
-    }
+    await runService(BoardsSprintsService, args, (svc) => svc.getSprintCapacity({ sprintId: args.sprintId!, teamId: args.teamId }));
   },
 });
 
