@@ -78,6 +78,7 @@ Full command reference: [docs/commands.md](./docs/commands.md)
 - [Getting Started](./docs/getting-started.md) — installation, initial setup, first commands
 - [Configuration](./docs/configuration.md) — all config keys, auth types (PAT, Entra ID, NTLM, Basic), on-premises setup
 - [Command Reference](./docs/commands.md) — all subcommands with arguments, options, and examples
+- [Changelog](./CHANGELOG.md) — notable changes in each release
 
 ## Development
 
