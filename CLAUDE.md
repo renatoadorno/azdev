@@ -59,6 +59,8 @@ src/
                       Credentials live in the OS keychain (service com.azdev.cli)
     errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
     parsers.ts      — parseId(): positive-integer validation for work item IDs
+    warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
+                      legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     commands/       — One file per command group; each calls services directly
       workitem.ts   — 14 subcommands
       sprint.ts     — 4 subcommands
