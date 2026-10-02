@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-02
+
+Description templates per work item type, used as models: a card carries its
+task's own content, written in the template's structure.
+
+### Added
+
+- `templates/` next to `config.json`: one `<name>.md` per work item type (or a
+  variant such as `Publication [PROD].md`), the model each description is written
+  from. `azdev workitem template [name] [--title] [--parent]` lists them or prints
+  one with `{title}`, `{parentId}` and `{parentTitle}` filled.
+- `workitem create` and `bulk-create` check the description against the type's
+  template (or the one `--template` names): a missing description, the untouched
+  template or a leftover `<…>` prompt fails before anything is sent, and a template
+  section left out prints a warning. `--noTemplate` skips the check.
+- `flow apply --descriptions <dir>` takes one `<key>.md` per card to create. A
+  missing, untouched or unknown-key description fails before any card is created;
+  the dry run shows the `template` each card follows and whether its `description`
+  is there. Flow cards pick a template with `"template"`.
+- `config paths` reports the `templates` directory.
+
+### Changed
+
+- A flow card's inline `description` is a model to write from, no longer the text
+  `flow apply` writes; `flow status` recognizes an untouched template file as an
+  empty description.
+
+### Fixed
+
+- `install.sh` (and `scripts/install-dev.sh`) re-sign the binary ad-hoc on macOS when
+  its signature does not verify — macOS kills such a binary with exit 137 and no
+  output — and check that the installed binary runs.
+
 ## [0.5.2] - 2026-10-02
 
 Creating a story's cards and reading what happened to them stop taking several
@@ -188,7 +221,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.2...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/renatoadorno/azdev/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/renatoadorno/azdev/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/renatoadorno/azdev/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/renatoadorno/azdev/compare/v0.4.0...v0.5.0
