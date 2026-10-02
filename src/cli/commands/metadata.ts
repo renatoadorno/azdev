@@ -15,11 +15,17 @@ const types = defineCommand({
   meta: { name: 'types', description: 'List work item types available in the project' },
   args: {
     ...globalOptions,
+    type: { type: 'string', description: 'Only this type (case-insensitive), e.g. Issue — to check its states' },
     raw: { type: 'boolean', description: 'Return the full raw types (color, icon, fields, transitions)' },
   },
   async run({ args }) {
     await runService(MetadataService, args, async (svc) => {
-      const result = await svc.getWorkItemTypes();
+      const all = await svc.getWorkItemTypes();
+      const wanted = args.type?.toLowerCase();
+      const result = wanted ? all.filter(t => t.name?.toLowerCase() === wanted) : all;
+      if (wanted && result.length === 0) {
+        throw new Error(`Type "${args.type}" not found. Types: ${all.map(t => t.name).join(', ')}`);
+      }
       return args.raw ? result : result.map(slimType);
     });
   },

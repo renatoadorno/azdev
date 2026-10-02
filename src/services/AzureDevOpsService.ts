@@ -1,5 +1,8 @@
 import * as azdev from "azure-devops-node-api";
 import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi";
+import type { WorkApi } from "azure-devops-node-api/WorkApi";
+import { WorkItemErrorPolicy } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces";
+import type { TreeStructureGroup } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces";
 import type { AzureDevOpsConfig } from "../interfaces/AzureDevOps";
 import {
   getPersonalAccessTokenHandler,
@@ -8,11 +11,31 @@ import {
 } from "azure-devops-node-api/WebApi";
 import * as VsoBaseInterfaces from "azure-devops-node-api/interfaces/common/VsoBaseInterfaces";
 import type { IRequestHandler } from "azure-devops-node-api/interfaces/common/VsoBaseInterfaces";
+import {
+  CURRENT_SPRINT_ALIASES,
+  flattenIterations,
+  matchIteration,
+  suggestIterations,
+  type SlimIterationNode,
+} from "./iterations";
+import { ME, slimWorkItem } from "./workItemUtils";
+
+export const CLASSIFICATION_DEPTH = 10;
+
+// TreeStructureGroup.Areas === 0 and the SDK route builder drops falsy route values,
+// which would hit the wrong endpoint — so the literal route segments are used instead.
+export const AREAS_GROUP = 'Areas' as unknown as TreeStructureGroup;
+export const ITERATIONS_GROUP = 'Iterations' as unknown as TreeStructureGroup;
+
+/** getWorkItems accepts at most 200 ids per call. */
+const BATCH_LIMIT = 200;
 
 export class AzureDevOpsService {
   protected connection: azdev.WebApi;
   protected config: AzureDevOpsConfig;
   protected authHandler: IRequestHandler | undefined;
+  private currentUserPromise?: Promise<string>;
+  private iterationsPromise?: Promise<SlimIterationNode[]>;
 
   constructor(config: AzureDevOpsConfig) {
     this.config = config;
@@ -112,4 +135,96 @@ export class AzureDevOpsService {
     return await this.connection.getWorkItemTrackingApi();
   }
 
+  protected async getWorkApi(): Promise<WorkApi> {
+    return await this.connection.getWorkApi();
+  }
+
+  /** Browser link to a work item. */
+  protected webUrl(id: number): string {
+    return `${this.config.orgUrl}/${encodeURIComponent(this.config.project)}/_workitems/edit/${id}`;
+  }
+
+  /** Account (e-mail) of the authenticated user — what `@me` stands for in assignments. */
+  protected currentUser(): Promise<string> {
+    this.currentUserPromise ??= this.connection.connect().then(data => {
+      const user = data.authenticatedUser;
+      const account = user?.properties?.Account?.$value ?? user?.providerDisplayName;
+      if (!account) throw new Error('Could not resolve the authenticated user for @me');
+      return account as string;
+    });
+    return this.currentUserPromise;
+  }
+
+  /** `@me` → the authenticated account; anything else passes through. */
+  protected async resolveAssignee(value?: string): Promise<string | undefined> {
+    if (!value) return value;
+    return value.trim().toLowerCase() === ME ? this.currentUser() : value;
+  }
+
+  private projectIterations(): Promise<SlimIterationNode[]> {
+    this.iterationsPromise ??= this.getWorkItemTrackingApi()
+      .then(witApi => witApi.getClassificationNode(this.config.project, ITERATIONS_GROUP, undefined, CLASSIFICATION_DEPTH))
+      .then(root => flattenIterations(root));
+    return this.iterationsPromise;
+  }
+
+  /**
+   * Resolves a `--sprint` value — `current`, a number (`82`), a name (`Sprint 82`),
+   * a full path or a GUID — to the iteration it names.
+   */
+  protected async resolveIteration(value: string, teamId?: string): Promise<SlimIterationNode> {
+    if (CURRENT_SPRINT_ALIASES.includes(value.trim().toLowerCase())) {
+      const workApi = await this.getWorkApi();
+      const [current] = await workApi.getTeamIterations({ project: this.config.project, team: teamId }, 'current');
+      if (!current?.path) throw new Error(`No current sprint found for project "${this.config.project}"`);
+      return {
+        id: current.id,
+        name: current.name,
+        path: current.path,
+        startDate: current.attributes?.startDate?.toString(),
+        finishDate: current.attributes?.finishDate?.toString(),
+      };
+    }
+
+    const iterations = await this.projectIterations();
+    const match = matchIteration(value, iterations);
+    if (match?.path) return match;
+
+    const suggestions = suggestIterations(value, iterations);
+    const hint = suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : " List them with 'azdev sprint list'.";
+    throw new Error(`Sprint "${value}" not found in project "${this.config.project}".${hint}`);
+  }
+
+  /**
+   * Batch-fetches the given ids and returns compact rows in the same order.
+   * Ids that are deleted or unreadable (area security) are left out instead of
+   * failing the whole batch.
+   */
+  protected async hydrate(ids: number[], fields?: string[]): Promise<any[]> {
+    if (ids.length === 0) return [];
+    const witApi = await this.getWorkItemTrackingApi();
+
+    const fetched: any[] = [];
+    for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
+      const chunk = ids.slice(i, i + BATCH_LIMIT);
+      const items = await witApi.getWorkItems(chunk, fields, undefined, undefined, WorkItemErrorPolicy.Omit, this.config.project);
+      // Omit returns null in place of a missing item; a 404 resolves the whole call as null.
+      fetched.push(...(items ?? []).filter(Boolean));
+    }
+
+    const byId = new Map<number, any>(fetched.map(wi => [wi.id, wi]));
+    return ids
+      .map(id => byId.get(id))
+      .filter(Boolean)
+      .map(wi => slimWorkItem(wi));
+  }
+
+  /** Runs a WIQL query and returns the ids it matched, in query order. */
+  protected async queryIds(query: string, top?: number): Promise<number[]> {
+    const witApi = await this.getWorkItemTrackingApi();
+    const result = await witApi.queryByWiql({ query }, { project: this.config.project }, undefined, top);
+    return (result.workItems ?? [])
+      .map(w => w.id)
+      .filter((id): id is number => typeof id === 'number');
+  }
 }

@@ -55,5 +55,7 @@ export interface AzureDevOpsConfig {
   apiVersion?: string; // API version for on-premises
   auth?: AzureDevOpsAuthConfig; // Updated to use the new union type
   entraAuthHandler?: EntraAuthHandler;
+  /** Default format for rich-text fields and comments when `--format` is not passed. */
+  richTextFormat?: 'html' | 'markdown';
 }
 

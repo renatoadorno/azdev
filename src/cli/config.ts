@@ -31,6 +31,7 @@ interface RawCliConfig {
   apiVersion?: string | null;
   username?: string;
   domain?: string;
+  richTextFormat?: string;
   /** Credentials belong in the keychain; these only survive in legacy files. */
   personalAccessToken?: string;
   password?: string;
@@ -128,6 +129,16 @@ async function requireSecret(kind: SecretKind, orgUrl: string): Promise<string> 
   process.exit(2);
 }
 
+const RICH_TEXT_FORMATS = ['html', 'markdown'] as const;
+
+function parseConfiguredFormat(value?: string): AzureDevOpsConfig['richTextFormat'] {
+  if (value === undefined) return undefined;
+  if ((RICH_TEXT_FORMATS as readonly string[]).includes(value)) return value as AzureDevOpsConfig['richTextFormat'];
+  console.error(`Config richTextFormat must be 'html' or 'markdown' (got '${value}').`);
+  console.error("Fix it with 'azdev config set richTextFormat markdown' or 'azdev config unset richTextFormat'.");
+  process.exit(2);
+}
+
 function requireOrgUrl(): string {
   const { orgUrl } = requireConfigFile();
   if (orgUrl) return orgUrl;
@@ -156,6 +167,7 @@ export async function loadCliConfig(): Promise<AzureDevOpsConfig> {
     isOnPremises: raw.isOnPremises ?? false,
     collection: raw.collection ?? undefined,
     apiVersion: raw.apiVersion ?? undefined,
+    richTextFormat: parseConfiguredFormat(raw.richTextFormat),
   };
 
   const authType = raw.authType ?? 'pat';

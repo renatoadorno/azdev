@@ -1,10 +1,11 @@
 import type { CoreApi } from 'azure-devops-node-api/CoreApi';
 import type { WorkItemTrackingProcessApi } from 'azure-devops-node-api/WorkItemTrackingProcessApi';
 import { ProjectVisibility } from 'azure-devops-node-api/interfaces/CoreInterfaces';
-import type { TreeStructureGroup, WorkItemClassificationNode } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import type { WorkItemClassificationNode } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { FieldType } from 'azure-devops-node-api/interfaces/WorkItemTrackingProcessInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
-import { AzureDevOpsService } from './AzureDevOpsService';
+import { AREAS_GROUP, AzureDevOpsService, CLASSIFICATION_DEPTH, ITERATIONS_GROUP } from './AzureDevOpsService';
+import { flattenAreas, flattenIterations, toFieldPath } from './iterations';
 import type {
   ListProjectsParams,
   GetProjectDetailsParams,
@@ -17,48 +18,6 @@ import type {
   GetWorkItemTypesParams,
   GetWorkItemTypeFieldsParams
 } from '../interfaces/ProjectManagement';
-
-const CLASSIFICATION_DEPTH = 10;
-
-// TreeStructureGroup.Areas === 0 and the SDK route builder drops falsy route values,
-// which would hit the wrong endpoint — so the literal route segments are used instead.
-const AREAS_GROUP = 'Areas' as unknown as TreeStructureGroup;
-const ITERATIONS_GROUP = 'Iterations' as unknown as TreeStructureGroup;
-
-interface SlimAreaNode {
-  name?: string;
-  path?: string;
-}
-
-interface SlimIterationNode extends SlimAreaNode {
-  startDate?: string;
-  finishDate?: string;
-}
-
-// Classification node paths come as "\Project\Area\Sub", which is not a valid
-// System.AreaPath/System.IterationPath value ("Project\Sub") — strip the leading
-// backslash and the structural "Area"/"Iteration" segment.
-function toFieldPath(path?: string): string | undefined {
-  if (!path) return path;
-  return path.replace(/^\\/, '').replace(/^([^\\]+)\\(Area|Iteration)(?=\\|$)/, '$1');
-}
-
-function flattenAreas(node: WorkItemClassificationNode): SlimAreaNode[] {
-  const flat: SlimAreaNode[] = [{ name: node.name, path: toFieldPath(node.path) }];
-  for (const child of node.children ?? []) flat.push(...flattenAreas(child));
-  return flat;
-}
-
-function flattenIterations(node: WorkItemClassificationNode): SlimIterationNode[] {
-  const flat: SlimIterationNode[] = [{
-    name: node.name,
-    path: toFieldPath(node.path),
-    startDate: node.attributes?.startDate,
-    finishDate: node.attributes?.finishDate,
-  }];
-  for (const child of node.children ?? []) flat.push(...flattenIterations(child));
-  return flat;
-}
 
 export class ProjectService extends AzureDevOpsService {
   constructor(config: AzureDevOpsConfig) {

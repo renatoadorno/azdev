@@ -1,11 +1,17 @@
-import type { WorkApi } from 'azure-devops-node-api/WorkApi';
 import type { CoreApi } from 'azure-devops-node-api/CoreApi';
 import type { TeamContext } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import { AzureDevOpsService } from './AzureDevOpsService';
-import { slimWorkItem, wiqlEscape } from './workItemUtils';
+import { groupDelivery } from './sprintSummary';
+import {
+  DEFAULT_HYDRATE_FIELDS,
+  REMOVED_STATE,
+  buildFilterClauses,
+  slimWorkItem,
+  wiqlEscape,
+} from './workItemUtils';
 import type {
   GetBoardsParams,
   GetBoardColumnsParams,
@@ -15,8 +21,11 @@ import type {
   GetCurrentSprintParams,
   GetSprintWorkItemsParams,
   GetSprintCapacityParams,
-  GetTeamMembersParams
+  GetTeamMembersParams,
+  SprintSummaryParams,
 } from '../interfaces/BoardsAndSprints';
+
+const DEFAULT_SPRINT = 'current';
 
 const BOARD_ITEMS_TOP = 200;
 const BOARD_ITEM_FIELDS = [
@@ -30,10 +39,6 @@ const BOARD_ITEM_FIELDS = [
 export class BoardsSprintsService extends AzureDevOpsService {
   constructor(config: AzureDevOpsConfig) {
     super(config);
-  }
-
-  private async getWorkApi(): Promise<WorkApi> {
-    return await this.connection.getWorkApi();
   }
 
   private async getCoreApi(): Promise<CoreApi> {
@@ -167,16 +172,57 @@ export class BoardsSprintsService extends AzureDevOpsService {
     return currentIterations && currentIterations.length > 0 ? currentIterations[0] : null;
   }
 
-  public async getSprintWorkItems(params: GetSprintWorkItemsParams): Promise<any> {
-    const workApi = await this.getWorkApi();
-    const teamContext = this.getTeamContext(params.teamId);
-    return await workApi.getIterationWorkItems(teamContext, params.sprintId);
+  /** Ids of the sprint's work items matching extra WIQL conditions. */
+  private async sprintItemIds(iterationPath: string, clauses: string[]): Promise<number[]> {
+    const conditions = [`[System.IterationPath] = '${wiqlEscape(iterationPath)}'`, ...clauses];
+    return this.queryIds(
+      `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND ${conditions.join(' AND ')} ORDER BY [System.WorkItemType], [System.Id]`,
+    );
+  }
+
+  public async getSprintWorkItems(params: GetSprintWorkItemsParams): Promise<any[]> {
+    const iteration = await this.resolveIteration(params.sprint ?? DEFAULT_SPRINT, params.teamId);
+    const ids = await this.sprintItemIds(iteration.path!, buildFilterClauses(params));
+    return this.hydrate(ids, DEFAULT_HYDRATE_FIELDS);
+  }
+
+  public async getSprintSummary(params: SprintSummaryParams): Promise<Record<string, unknown>> {
+    const iteration = await this.resolveIteration(params.sprint ?? DEFAULT_SPRINT, params.teamId);
+    const assignee = params.assignedTo ? await this.resolveAssignee(params.assignedTo) : undefined;
+    const filters = assignee ? { assignedTo: assignee } : { mine: true };
+
+    const mineIds = await this.sprintItemIds(iteration.path!, [
+      ...buildFilterClauses(filters),
+      `[System.State] <> '${REMOVED_STATE}'`,
+    ]);
+    const mine = await this.hydrate(mineIds, DEFAULT_HYDRATE_FIELDS);
+
+    const parentIds = [...new Set(mine.map(row => row.Parent).filter((id): id is number => typeof id === 'number'))];
+    const parents = await this.hydrate(parentIds, DEFAULT_HYDRATE_FIELDS);
+    const siblingIds = parentIds.length
+      ? await this.queryIds(
+          `SELECT [System.Id] FROM WorkItems WHERE [System.Parent] IN (${parentIds.join(', ')}) ORDER BY [System.WorkItemType], [System.Id]`,
+        )
+      : [];
+    const mineSet = new Set(mineIds);
+    const siblings = (await this.hydrate(siblingIds.filter(id => !mineSet.has(id)), [...DEFAULT_HYDRATE_FIELDS, 'System.IterationPath']))
+      .map(({ IterationPath, ...row }) => ({ ...row, Sprint: String(IterationPath ?? '').split('\\').pop() }));
+
+    const delivery = groupDelivery({ mine, parents, siblings, operationalTypes: params.operationalTypes });
+    return {
+      sprint: { name: iteration.name, path: iteration.path, startDate: iteration.startDate, finishDate: iteration.finishDate },
+      assignee: assignee ?? (await this.currentUser()),
+      ...delivery,
+    };
   }
 
   public async getSprintCapacity(params: GetSprintCapacityParams): Promise<any> {
     const workApi = await this.getWorkApi();
     const teamContext = this.getTeamContext(params.teamId);
-    const capacity = await workApi.getCapacitiesWithIdentityRefAndTotals(teamContext, params.sprintId);
+    const iteration = await this.resolveIteration(params.sprint ?? DEFAULT_SPRINT, params.teamId);
+    if (!iteration.id) throw new Error(`Sprint "${params.sprint}" has no iteration id`);
+    const capacity = await workApi.getCapacitiesWithIdentityRefAndTotals(teamContext, iteration.id);
+    if (!capacity) throw new Error(`No capacity found for sprint "${iteration.name}" — is it one of the team's iterations?`);
 
     return {
       members: (capacity.teamMembers ?? []).map(m => ({

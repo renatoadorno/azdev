@@ -1,5 +1,7 @@
 import type { JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import { CommentFormat, CommentSortOrder, TypeInfo } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import type { Comment } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import { AzureDevOpsService } from './AzureDevOpsService';
 import type {
@@ -15,50 +17,54 @@ import type {
   CreateLinkParams,
   BulkWorkItemParams,
   WorkItemHistoryParams,
-  ChildWorkItemsParams
+  ChildWorkItemsParams,
+  ListCommentsParams,
 } from '../interfaces/WorkItems';
 import {
-  CLOSED_STATES,
   HIERARCHY_FORWARD,
   DEFAULT_HYDRATE_FIELDS,
-  MULTILINE_FIELDS,
+  WRITE_SUMMARY_FIELDS,
+  buildFilterClauses,
+  fieldOperations,
+  parentRelationOperation,
+  parseTags,
+  simplifyValue,
   slimWorkItem,
   wiqlEscape,
 } from './workItemUtils';
+import { richTextToPlain } from './richText';
 
-const BATCH_LIMIT = 200;
+// Comments resource; 7.1-preview.4 is the first version that takes `format`.
+const COMMENTS_LOCATION_ID = '608aac0a-32e1-4493-a863-b9cf4566d257';
+const COMMENTS_FORMAT_API_VERSION = '7.1-preview.4';
+
+export interface CreateRequest {
+  workItemType: string;
+  operations: JsonPatchOperation[];
+}
+
+export interface SlimComment {
+  id?: number;
+  author?: string;
+  date?: string;
+  text?: string;
+  format?: string;
+}
 
 export class WorkItemService extends AzureDevOpsService {
   constructor(config: AzureDevOpsConfig) {
     super(config);
   }
 
-  /**
-   * Fetch full fields for a list of IDs in batches and return compact rows.
-   * WIQL only returns id+url, so callers hydrate the references here.
-   */
-  private async hydrateRefs(ids: number[], fields?: string[]): Promise<any[]> {
-    if (ids.length === 0) return [];
-    const witApi = await this.getWorkItemTrackingApi();
-
-    const fetched: any[] = [];
-    for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
-      const chunk = ids.slice(i, i + BATCH_LIMIT);
-      const items = await witApi.getWorkItems(chunk, fields, undefined, undefined, undefined, this.config.project);
-      fetched.push(...items);
-    }
-
-    const byId = new Map<number, any>(fetched.map(wi => [wi.id, wi]));
-    return ids
-      .map(id => byId.get(id))
-      .filter(Boolean)
-      .map(wi => slimWorkItem(wi));
+  /** Compact confirmation of a write: the fields that matter plus a browser link. */
+  public summarize(workItem: any): Record<string, unknown> {
+    return { ...slimWorkItem(workItem, WRITE_SUMMARY_FIELDS), url: this.webUrl(workItem.id) };
   }
 
   /**
    * Hydrate a WIQL result (flat or tree), using the queried columns as fields.
    */
-  private async hydrateQueryResult(queryResult: any): Promise<any[]> {
+  private async hydrateQueryResult(queryResult: any, excludeId?: number): Promise<any[]> {
     const fields: string[] = (queryResult?.columns ?? [])
       .map((c: any) => c.referenceName)
       .filter(Boolean);
@@ -70,20 +76,32 @@ export class WorkItemService extends AzureDevOpsService {
       const seen = new Set<number>();
       for (const rel of queryResult.workItemRelations) {
         const tid = rel?.target?.id;
-        if (typeof tid === 'number') seen.add(tid);
+        if (typeof tid === 'number' && tid !== excludeId) seen.add(tid);
       }
       ids = [...seen];
     }
 
-    return this.hydrateRefs(ids, fields.length ? fields : undefined);
+    return this.hydrate(ids, fields.length ? fields : undefined);
   }
 
   /**
    * Get the history of a work item
    */
-  public async getWorkItemHistory(params: WorkItemHistoryParams): Promise<any> {
+  public async getWorkItemHistory(params: WorkItemHistoryParams): Promise<any[]> {
     const witApi = await this.getWorkItemTrackingApi();
-    return witApi.getRevisions(params.id, undefined, undefined, undefined, this.config.project);
+    // Revisions come in pages; an old item would otherwise lose exactly its latest changes.
+    const pageSize = 200;
+    const revisions: any[] = [];
+    for (let skip = 0; ; skip += pageSize) {
+      const page = await witApi.getRevisions(params.id, pageSize, skip, undefined, this.config.project);
+      if (!page) {
+        if (skip === 0) throw new Error(`Work item ${params.id} not found`);
+        break;
+      }
+      revisions.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return revisions;
   }
 
   /**
@@ -175,22 +193,17 @@ export class WorkItemService extends AzureDevOpsService {
    */
   public async getMyWorkItems(params: MyWorkItemsParams): Promise<any> {
     const witApi = await this.getWorkItemTrackingApi();
-    const conditions: string[] = [];
-    if (params.state) {
-      conditions.push(`AND [System.State] = '${wiqlEscape(params.state)}'`);
-    }
-    if (params.openOnly) {
-      conditions.push(`AND [System.State] NOT IN (${CLOSED_STATES.map(s => `'${s}'`).join(', ')})`);
-    }
-    if (params.path) {
-      conditions.push(`AND [System.IterationPath] = '${wiqlEscape(params.path)}'`);
-    }
+    const path = params.sprint ? (await this.resolveIteration(params.sprint)).path : params.path;
+    const conditions = [
+      '[System.AssignedTo] = @me',
+      ...buildFilterClauses({ state: params.state, openOnly: params.openOnly }),
+      ...(path ? [`[System.IterationPath] = '${wiqlEscape(path)}'`] : []),
+    ];
 
     const query = `SELECT [System.Id], [System.WorkItemType], [System.State], [System.Title]
                   FROM WorkItems
                   WHERE [System.TeamProject] = @project
-                  AND [System.AssignedTo] = @me
-                  ${conditions.join('\n                    ')}
+                  ${conditions.map(c => `AND ${c}`).join('\n                  ')}
                   ORDER BY [System.CreatedDate] DESC`;
 
     const queryResult = await witApi.queryByWiql({
@@ -212,22 +225,12 @@ export class WorkItemService extends AzureDevOpsService {
    * Get children of a work item (direct or recursive), with optional
    * assignee / state / open filters. Returns compact hydrated rows.
    */
-  public async getChildWorkItems(params: ChildWorkItemsParams): Promise<any> {
+  public async getChildWorkItems(params: ChildWorkItemsParams, fields = DEFAULT_HYDRATE_FIELDS): Promise<any[]> {
     const witApi = await this.getWorkItemTrackingApi();
-
-    const filters: string[] = [];
-    if (params.mine) filters.push(`[{scope}].[System.AssignedTo] = @me`);
-    if (params.state) filters.push(`[{scope}].[System.State] = '${wiqlEscape(params.state)}'`);
-    if (params.openOnly) {
-      filters.push(`[{scope}].[System.State] NOT IN (${CLOSED_STATES.map(s => `'${s}'`).join(', ')})`);
-    }
-    if (params.type) filters.push(`[{scope}].[System.WorkItemType] = '${wiqlEscape(params.type)}'`);
 
     let query: string;
     if (params.recursive) {
-      const targetFilters = filters
-        .map(f => `AND ${f.replace(/\{scope\}/g, 'Target')}`)
-        .join(' ');
+      const targetFilters = buildFilterClauses(params, 'Target').map(c => `AND ${c}`).join(' ');
       query = `SELECT [System.Id]
                FROM WorkItemLinks
                WHERE ([Source].[System.Id] = ${params.id})
@@ -235,9 +238,7 @@ export class WorkItemService extends AzureDevOpsService {
                ${targetFilters}
                MODE (Recursive)`;
     } else {
-      const flatFilters = filters
-        .map(f => `AND ${f.replace(/\[\{scope\}\]\./g, '')}`)
-        .join(' ');
+      const flatFilters = buildFilterClauses(params).map(c => `AND ${c}`).join(' ');
       query = `SELECT [System.Id]
                FROM WorkItems
                WHERE [System.Parent] = ${params.id}
@@ -246,107 +247,55 @@ export class WorkItemService extends AzureDevOpsService {
     }
 
     const queryResult = await witApi.queryByWiql({ query }, { project: this.config.project });
-
-    let ids: number[] = [];
-    if (queryResult.workItems?.length) {
-      ids = queryResult.workItems.map((w: any) => w.id).filter((x: any) => typeof x === 'number');
-    } else if (queryResult.workItemRelations?.length) {
-      const seen = new Set<number>();
-      for (const rel of queryResult.workItemRelations) {
-        const tid = rel?.target?.id;
-        if (typeof tid === 'number' && tid !== params.id) seen.add(tid);
-      }
-      ids = [...seen];
-    }
-
-    return this.hydrateRefs(ids, DEFAULT_HYDRATE_FIELDS);
+    const withFields = { ...queryResult, columns: fields.map(referenceName => ({ referenceName })) };
+    return this.hydrateQueryResult(withFields, params.id);
   }
 
   /**
-   * Create a work item
+   * Resolves every convenience of `create` (sprint, @me, parent inheritance, tags,
+   * format) into the exact request — what `--dryRun` prints and `create` sends.
+   */
+  public async buildCreateRequest(params: CreateWorkItemParams): Promise<CreateRequest> {
+    let { areaPath, iterationPath } = params;
+    if (params.sprint) iterationPath = (await this.resolveIteration(params.sprint)).path;
+
+    // Same as "add child" on the board: the child lands in the parent's area and sprint.
+    if (params.parentId && (!areaPath || !iterationPath)) {
+      const parent = await this.getWorkItemById({
+        id: params.parentId,
+        fields: ['System.AreaPath', 'System.IterationPath'],
+      });
+      areaPath ??= parent.fields?.['System.AreaPath'];
+      iterationPath ??= parent.fields?.['System.IterationPath'];
+    }
+
+    const fields: Record<string, unknown> = {
+      'System.Title': params.title,
+      'System.Description': params.description,
+      'System.AssignedTo': await this.resolveAssignee(params.assignedTo),
+      'System.State': params.state,
+      'System.AreaPath': areaPath,
+      'System.IterationPath': iterationPath,
+      'System.Tags': parseTags(params.tags),
+      ...params.additionalFields,
+    };
+
+    const operations = fieldOperations(fields, params.format ?? this.config.richTextFormat);
+    if (params.parentId) operations.push(parentRelationOperation(this.config.orgUrl, params.parentId));
+    return { workItemType: params.workItemType, operations };
+  }
+
+  /**
+   * Create a work item — parent link, tags and sprint go in the same request.
    */
   public async createWorkItem(params: CreateWorkItemParams): Promise<any> {
+    const request = await this.buildCreateRequest(params);
     const witApi = await this.getWorkItemTrackingApi();
-
-    const patchDocument: JsonPatchOperation[] = [];
-
-    patchDocument.push({
-      op: Operation.Add,
-      path: "/fields/System.Title",
-      value: params.title
-    });
-
-    if (params.description) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: "/fields/System.Description",
-        value: params.description
-      });
+    try {
+      return await witApi.createWorkItem(undefined, request.operations, this.config.project, request.workItemType);
+    } catch (err) {
+      throw await this.explainStateError(err, params.state, params.workItemType);
     }
-
-    if (params.assignedTo) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: "/fields/System.AssignedTo",
-        value: params.assignedTo
-      });
-    }
-
-    if (params.state) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: "/fields/System.State",
-        value: params.state
-      });
-    }
-
-    if (params.areaPath) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: "/fields/System.AreaPath",
-        value: params.areaPath
-      });
-    }
-
-    if (params.iterationPath) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: "/fields/System.IterationPath",
-        value: params.iterationPath
-      });
-    }
-
-    if (params.additionalFields) {
-      for (const [key, value] of Object.entries(params.additionalFields)) {
-        patchDocument.push({
-          op: Operation.Add,
-          path: `/fields/${key}`,
-          value: value
-        });
-      }
-    }
-
-    // Mark rich-text format (HTML vs Markdown) for the multiline fields set.
-    if (params.format) {
-      const formatValue = params.format === 'markdown' ? 'Markdown' : 'Html';
-      const multilineRefs = patchDocument
-        .map(op => (op.path?.startsWith('/fields/') ? op.path.slice('/fields/'.length) : undefined))
-        .filter((ref): ref is string => !!ref && MULTILINE_FIELDS.includes(ref));
-      for (const ref of multilineRefs) {
-        patchDocument.push({
-          op: Operation.Add,
-          path: `/multilineFieldsFormat/${ref}`,
-          value: formatValue
-        });
-      }
-    }
-
-    return witApi.createWorkItem(
-      undefined,
-      patchDocument,
-      this.config.project,
-      params.workItemType
-    );
   }
 
   /**
@@ -354,48 +303,72 @@ export class WorkItemService extends AzureDevOpsService {
    */
   public async updateWorkItem(params: UpdateWorkItemParams): Promise<any> {
     const witApi = await this.getWorkItemTrackingApi();
+    const fields = { ...params.fields };
+    if (params.sprint) fields['System.IterationPath'] = (await this.resolveIteration(params.sprint)).path;
 
-    const patchDocument: JsonPatchOperation[] = [];
-
-    for (const [key, value] of Object.entries(params.fields)) {
-      patchDocument.push({
-        op: Operation.Add,
-        path: `/fields/${key}`,
-        value: value
-      });
+    const operations = fieldOperations(fields, params.format ?? this.config.richTextFormat);
+    try {
+      return await witApi.updateWorkItem(undefined, operations, params.id, this.config.project);
+    } catch (err) {
+      const state = fields['System.State'];
+      throw await this.explainStateError(err, typeof state === 'string' ? state : undefined, undefined, params.id);
     }
-
-    // Mark rich-text format (HTML vs Markdown) for the multiline fields touched.
-    if (params.format) {
-      const formatValue = params.format === 'markdown' ? 'Markdown' : 'Html';
-      for (const key of Object.keys(params.fields)) {
-        if (MULTILINE_FIELDS.includes(key)) {
-          patchDocument.push({
-            op: Operation.Add,
-            path: `/multilineFieldsFormat/${key}`,
-            value: formatValue
-          });
-        }
-      }
-    }
-
-    return witApi.updateWorkItem(
-      undefined,
-      patchDocument,
-      params.id,
-      this.config.project
-    );
   }
 
   /**
-   * Add a comment to a work item
+   * Add a comment to a work item. Markdown goes through the versioned endpoint
+   * that accepts `format`; the SDK's addComment only speaks HTML.
    */
   public async addWorkItemComment(params: AddWorkItemCommentParams): Promise<any> {
     const witApi = await this.getWorkItemTrackingApi();
+    const format = params.format ?? this.config.richTextFormat;
+    if (format !== 'markdown') {
+      return witApi.addComment({ text: params.text }, this.config.project, params.id);
+    }
 
-    return witApi.addComment({
-      text: params.text
-    }, this.config.project, params.id);
+    const verData = await witApi.vsoClient.getVersioningData(
+      COMMENTS_FORMAT_API_VERSION,
+      'wit',
+      COMMENTS_LOCATION_ID,
+      { project: this.config.project, workItemId: params.id },
+      { format: 'markdown' },
+    );
+    const options = witApi.createRequestOptions('application/json', verData.apiVersion);
+    const res = await witApi.rest.create(verData.requestUrl!, { text: params.text }, options);
+    const comment: Comment = witApi.formatResponse(res.result, TypeInfo.Comment, false);
+    if (comment?.format !== CommentFormat.Markdown) {
+      console.error(`Warning: the server stored comment ${comment?.id} as HTML — line breaks may be lost.`);
+    }
+    return comment;
+  }
+
+  /** Compact view of a comment, as plain text unless `raw`. */
+  public slimComment(comment: Comment, raw = false): SlimComment {
+    const format = comment.format === CommentFormat.Markdown ? 'markdown' : 'html';
+    return {
+      id: comment.id,
+      author: simplifyValue(comment.createdBy) as string | undefined,
+      date: comment.createdDate ? new Date(comment.createdDate).toISOString() : undefined,
+      text: raw ? comment.text : richTextToPlain(comment.text, format),
+      ...(raw ? { format } : {}),
+    };
+  }
+
+  /** Latest comments of a work item, oldest first. */
+  public async getComments(params: ListCommentsParams): Promise<{ total: number; comments: SlimComment[] }> {
+    const witApi = await this.getWorkItemTrackingApi();
+    const list = await witApi.getComments(
+      this.config.project,
+      params.id,
+      params.top,
+      undefined,
+      false,
+      undefined,
+      CommentSortOrder.Desc,
+    );
+    if (!list) throw new Error(`Work item ${params.id} not found`);
+    const comments = [...(list.comments ?? [])].reverse().map(c => this.slimComment(c, params.raw));
+    return { total: list.totalCount ?? comments.length, comments };
   }
 
   /**
@@ -420,12 +393,30 @@ export class WorkItemService extends AzureDevOpsService {
       });
     }
 
-    return witApi.updateWorkItem(
-      undefined,
-      patchDocument,
-      params.id,
-      this.config.project
-    );
+    try {
+      return await witApi.updateWorkItem(undefined, patchDocument, params.id, this.config.project);
+    } catch (err) {
+      throw await this.explainStateError(err, params.state, undefined, params.id);
+    }
+  }
+
+  /**
+   * States differ per type (an Issue has no Removed), and the API rejects a wrong
+   * one with a generic rule error. Turn that into the list of valid states.
+   */
+  private async explainStateError(err: unknown, state?: string, type?: string, id?: number): Promise<unknown> {
+    if (!state) return err;
+    try {
+      const witApi = await this.getWorkItemTrackingApi();
+      const workItemType = type ?? (id ? (await this.getWorkItemById({ id, fields: ['System.WorkItemType'] })).fields?.['System.WorkItemType'] : undefined);
+      if (!workItemType) return err;
+
+      const states = (await witApi.getWorkItemTypeStates(this.config.project, workItemType)).map(s => s.name ?? '');
+      if (states.some(s => s.toLowerCase() === state.toLowerCase())) return err;
+      return new Error(`State "${state}" is not valid for ${workItemType}. Valid states: ${states.join(', ')}`);
+    } catch {
+      return err;
+    }
   }
 
   /**
@@ -438,7 +429,7 @@ export class WorkItemService extends AzureDevOpsService {
       {
         op: Operation.Add,
         path: "/fields/System.AssignedTo",
-        value: params.assignedTo
+        value: await this.resolveAssignee(params.assignedTo)
       }
     ];
 
@@ -481,22 +472,17 @@ export class WorkItemService extends AzureDevOpsService {
   /**
    * Bulk create or update work items
    */
-  public async bulkUpdateWorkItems(params: BulkWorkItemParams): Promise<any> {
+  public async bulkUpdateWorkItems(params: BulkWorkItemParams): Promise<any[]> {
     const results = [];
 
     for (const workItemParams of params.workItems) {
       if ('id' in workItemParams) {
-        const result = await this.updateWorkItem(workItemParams);
-        results.push(result);
+        results.push(await this.updateWorkItem(workItemParams));
       } else {
-        const result = await this.createWorkItem(workItemParams);
-        results.push(result);
+        results.push(await this.createWorkItem(workItemParams));
       }
     }
 
-    return {
-      count: results.length,
-      workItems: results
-    };
+    return results;
   }
 }

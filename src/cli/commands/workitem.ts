@@ -1,23 +1,30 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { defineCommand } from 'citty';
+import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { WorkItemService } from '../../services/WorkItemService';
+import { WorkItemViewService } from '../../services/WorkItemViewService';
+import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../../services/history';
+import { attachmentFileName } from '../../services/richText';
 import { slimWorkItem } from '../../services/workItemUtils';
 import { globalOptions, runService } from '../command';
-import { parseId } from '../parsers';
+import {
+  failUsage,
+  parseCount,
+  parseCsv,
+  parseId,
+  parseJsonObject,
+  parseOptionalId,
+  parseRichTextFormat,
+  textOrFile,
+} from '../parsers';
 
-function parseCsv(value?: string): string[] | undefined {
-  if (!value) return undefined;
-  const parts = value.split(',').map(s => s.trim()).filter(Boolean);
-  return parts.length ? parts : undefined;
-}
-
-function parseRichTextFormat(value?: string): 'html' | 'markdown' | undefined {
-  if (!value) return undefined;
-  if (value !== 'html' && value !== 'markdown') {
-    console.error(`--format must be 'html' or 'markdown' (got '${value}')`);
-    process.exit(1);
-  }
-  return value;
-}
+const rawWrite = { type: 'boolean' as const, description: 'Return the full work item instead of the compact confirmation' };
+const formatArg = {
+  type: 'string' as const,
+  description: "Format of the rich-text FIELDS written: 'html' or 'markdown' (default: config richTextFormat, else html). For the CLI output format use --json/--markdown",
+};
+const sprintArg = { type: 'string' as const, description: "Sprint: 'current', a number (82), a name (Sprint 82) or a path" };
 
 const list = defineCommand({
   meta: { name: 'list', description: 'List work items via WIQL query' },
@@ -44,6 +51,67 @@ const get = defineCommand({
     await runService(WorkItemService, args, async (svc) => {
       const result = await svc.getWorkItemById({ id, fields });
       return args.raw ? result : slimWorkItem(result, fields);
+    });
+  },
+});
+
+const view = defineCommand({
+  meta: {
+    name: 'view',
+    description: 'Everything about a work item in one call: fields, description as text, parent, children, links, comments, images',
+  },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Work item ID', required: true },
+    comments: { type: 'string', description: 'How many of the latest comments to include (0 = none)', default: '5' },
+  },
+  async run({ args }) {
+    const id = parseId(args.id);
+    const comments = parseCount(args.comments, '--comments');
+    await runService(WorkItemViewService, args, (svc) => svc.viewWorkItem({ id, comments }));
+  },
+});
+
+const comments = defineCommand({
+  meta: { name: 'comments', description: 'Read the comments of a work item (oldest first, as plain text)' },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Work item ID', required: true },
+    top: { type: 'string', description: 'How many of the latest comments to return', default: '20' },
+    raw: { type: 'boolean', description: 'Keep the stored HTML/Markdown instead of plain text' },
+  },
+  async run({ args }) {
+    const id = parseId(args.id);
+    const top = parseCount(args.top, '--top');
+    await runService(WorkItemService, args, (svc) => svc.getComments({ id, top, raw: args.raw }));
+  },
+});
+
+const attachments = defineCommand({
+  meta: {
+    name: 'attachments',
+    description: 'List the attachments of a work item (attached files and images inline in description/comments); --download saves them',
+  },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Work item ID', required: true },
+    download: { type: 'string', description: 'Directory to save every attachment into (uses the configured credential)' },
+  },
+  async run({ args }) {
+    const id = parseId(args.id);
+    await runService(WorkItemViewService, args, async (svc) => {
+      const entries = await svc.listAttachments({ id });
+      if (!args.download) return entries.map(({ name, source, url }) => ({ name, source, url }));
+
+      fs.mkdirSync(args.download, { recursive: true });
+      const saved = [];
+      for (const entry of entries) {
+        const bytes = await svc.downloadAttachment(entry);
+        const file = path.resolve(args.download, attachmentFileName(entry));
+        fs.writeFileSync(file, bytes);
+        saved.push({ name: entry.name, source: entry.source, path: file, bytes: bytes.length });
+      }
+      return saved;
     });
   },
 });
@@ -75,14 +143,23 @@ const children = defineCommand({
 });
 
 const history = defineCommand({
-  meta: { name: 'history', description: 'Get work item history' },
+  meta: { name: 'history', description: 'Timeline of a work item: who changed which field (old → new) and when, plus comments' },
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
+    fields: { type: 'string', description: 'Comma-separated fields to follow (short or full names; default: state, owner, sprint, dates, description…)' },
+    allFields: { type: 'boolean', description: 'Follow every field' },
+    maxText: { type: 'string', description: 'Truncate long values to N characters (0 = no limit)', default: '240' },
+    raw: { type: 'boolean', description: 'Return the raw revisions (one full snapshot per revision)' },
   },
   async run({ args }) {
     const id = parseId(args.id);
-    await runService(WorkItemService, args, (svc) => svc.getWorkItemHistory({ id }));
+    const maxText = parseCount(args.maxText, '--maxText');
+    const fields = args.allFields ? undefined : parseCsv(args.fields) ?? DEFAULT_HISTORY_FIELDS;
+    await runService(WorkItemService, args, async (svc) => {
+      const revisions = await svc.getWorkItemHistory({ id });
+      return args.raw ? revisions : revisionTimeline(revisions, fields, maxText);
+    });
   },
 });
 
@@ -114,43 +191,67 @@ const mine = defineCommand({
   meta: { name: 'mine', description: 'Get work items assigned to me' },
   args: {
     ...globalOptions,
-    path: { type: 'string', description: 'Iteration path filter', default: '' },
+    sprint: sprintArg,
+    path: { type: 'string', description: 'Iteration path filter (prefer --sprint)' },
     state: { type: 'string', description: 'State filter' },
     open: { type: 'boolean', description: 'Exclude finished states (Done/Closed/Removed/Completed)' },
     top: { type: 'string', description: 'Max results', default: '100' },
   },
   async run({ args }) {
-    await runService(WorkItemService, args, (svc) => svc.getMyWorkItems({ path: args.path!, state: args.state, openOnly: args.open, top: Number(args.top) }));
+    if (args.sprint && args.path) failUsage('Pass --sprint or --path, not both');
+    await runService(WorkItemService, args, (svc) =>
+      svc.getMyWorkItems({ sprint: args.sprint, path: args.path, state: args.state, openOnly: args.open, top: Number(args.top) }),
+    );
   },
 });
 
 const create = defineCommand({
-  meta: { name: 'create', description: 'Create a work item' },
+  meta: { name: 'create', description: 'Create a work item — parent, tags and sprint in one call' },
   args: {
     ...globalOptions,
     type: { type: 'string', description: 'Work item type (e.g. Task, Bug)', required: true },
     title: { type: 'string', description: 'Title', required: true },
+    parent: { type: 'string', description: 'Parent work item ID; area and sprint are inherited from it unless given' },
+    tags: { type: 'string', description: "Tags separated by ';' or ','" },
+    sprint: sprintArg,
     description: { type: 'string', description: 'Description' },
-    assignedTo: { type: 'string', description: 'Assign to user' },
+    descriptionFile: { type: 'string', description: "Read the description from a file ('-' = stdin)" },
+    assignedTo: { type: 'string', description: "Assign to user (e-mail or name; '@me' = you)" },
     state: { type: 'string', description: 'Initial state' },
     areaPath: { type: 'string', description: 'Area path' },
-    iterationPath: { type: 'string', description: 'Iteration path' },
-    format: { type: 'string', description: "Format of the rich-text FIELDS being set (description etc.): 'html' or 'markdown'. For the CLI output format use --json/--markdown" },
+    iterationPath: { type: 'string', description: 'Iteration path (prefer --sprint)' },
+    format: formatArg,
+    dryRun: { type: 'boolean', description: 'Print the resolved request instead of creating' },
+    raw: rawWrite,
   },
   async run({ args }) {
     const richTextFormat = parseRichTextFormat(args.format);
-    await runService(WorkItemService, args, (svc) =>
-      svc.createWorkItem({
-        workItemType: args.type!,
-        title: args.title!,
-        description: args.description,
-        assignedTo: args.assignedTo,
-        state: args.state,
-        areaPath: args.areaPath,
-        iterationPath: args.iterationPath,
-        format: richTextFormat,
-      }),
-    );
+    const parentId = parseOptionalId(args.parent, 'parent work item ID');
+    const description = textOrFile(args.description, args.descriptionFile, ['description', 'descriptionFile']);
+    if (args.sprint && args.iterationPath) failUsage('Pass --sprint or --iterationPath, not both');
+
+    const params = {
+      workItemType: args.type!,
+      title: args.title!,
+      description,
+      assignedTo: args.assignedTo,
+      state: args.state,
+      areaPath: args.areaPath,
+      iterationPath: args.iterationPath,
+      sprint: args.sprint,
+      parentId,
+      tags: args.tags,
+      format: richTextFormat,
+    };
+    await runService(WorkItemService, args, async (svc) => {
+      if (args.dryRun) {
+        const request = await svc.buildCreateRequest(params);
+        const operations = request.operations.map(op => ({ ...op, op: Operation[op.op].toLowerCase() }));
+        return { dryRun: true, workItemType: request.workItemType, operations };
+      }
+      const created = await svc.createWorkItem(params);
+      return args.raw ? created : svc.summarize(created);
+    });
   },
 });
 
@@ -159,15 +260,28 @@ const update = defineCommand({
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
-    fields: { type: 'string', description: 'JSON object of fields to update', required: true },
-    format: { type: 'string', description: "Format of the rich-text FIELDS being updated (description etc.): 'html' or 'markdown'. For the CLI output format use --json/--markdown" },
+    fields: { type: 'string', description: 'JSON object of fields to update (reference names)' },
+    title: { type: 'string', description: 'New title' },
+    descriptionFile: { type: 'string', description: "Replace the description with a file's contents ('-' = stdin)" },
+    sprint: sprintArg,
+    format: formatArg,
+    raw: rawWrite,
   },
   async run({ args }) {
     const id = parseId(args.id);
     const richTextFormat = parseRichTextFormat(args.format);
-    await runService(WorkItemService, args, (svc) =>
-      svc.updateWorkItem({ id, fields: JSON.parse(args.fields!), format: richTextFormat }),
-    );
+    const fields: Record<string, unknown> = args.fields ? parseJsonObject(args.fields, '--fields') : {};
+    if (args.title !== undefined) fields['System.Title'] = args.title;
+    const description = textOrFile(undefined, args.descriptionFile, ['description', 'descriptionFile']);
+    if (description !== undefined) fields['System.Description'] = description;
+    if (Object.keys(fields).length === 0 && !args.sprint) {
+      failUsage('Nothing to update: pass --fields, --title, --descriptionFile or --sprint');
+    }
+
+    await runService(WorkItemService, args, async (svc) => {
+      const updated = await svc.updateWorkItem({ id, fields, sprint: args.sprint, format: richTextFormat });
+      return args.raw ? updated : svc.summarize(updated);
+    });
   },
 });
 
@@ -176,25 +290,42 @@ const comment = defineCommand({
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
-    text: { type: 'string', description: 'Comment text', required: true },
+    text: { type: 'string', description: 'Comment text' },
+    file: { type: 'string', description: "Read the comment from a file ('-' = stdin)" },
+    format: {
+      type: 'string',
+      description: "'markdown' keeps line breaks and #id links; 'html' is the API default (default: config richTextFormat)",
+    },
+    raw: { type: 'boolean', description: 'Return the full comment object' },
   },
   async run({ args }) {
     const id = parseId(args.id);
-    await runService(WorkItemService, args, (svc) => svc.addWorkItemComment({ id, text: args.text! }));
+    const richTextFormat = parseRichTextFormat(args.format);
+    const text = textOrFile(args.text, args.file, ['text', 'file']);
+    if (!text?.trim()) failUsage('Pass the comment with --text or --file');
+
+    await runService(WorkItemService, args, async (svc) => {
+      const created = await svc.addWorkItemComment({ id, text, format: richTextFormat });
+      return args.raw ? created : svc.slimComment(created, true);
+    });
   },
 });
 
 const setState = defineCommand({
-  meta: { name: 'set-state', description: 'Update work item state' },
+  meta: { name: 'set-state', description: 'Update work item state (an invalid state lists the valid ones for the type)' },
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
     state: { type: 'string', description: 'New state', required: true },
     comment: { type: 'string', description: 'Optional comment' },
+    raw: rawWrite,
   },
   async run({ args }) {
     const id = parseId(args.id);
-    await runService(WorkItemService, args, (svc) => svc.updateWorkItemState({ id, state: args.state!, comment: args.comment }));
+    await runService(WorkItemService, args, async (svc) => {
+      const updated = await svc.updateWorkItemState({ id, state: args.state!, comment: args.comment });
+      return args.raw ? updated : svc.summarize(updated);
+    });
   },
 });
 
@@ -203,11 +334,15 @@ const assign = defineCommand({
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
-    to: { type: 'string', description: 'User to assign to', required: true },
+    to: { type: 'string', description: "User to assign to (e-mail or name; '@me' = you)", required: true },
+    raw: rawWrite,
   },
   async run({ args }) {
     const id = parseId(args.id);
-    await runService(WorkItemService, args, (svc) => svc.assignWorkItem({ id, assignedTo: args.to! }));
+    await runService(WorkItemService, args, async (svc) => {
+      const updated = await svc.assignWorkItem({ id, assignedTo: args.to! });
+      return args.raw ? updated : svc.summarize(updated);
+    });
   },
 });
 
@@ -219,18 +354,15 @@ const link = defineCommand({
     targetId: { type: 'string', description: 'Target work item ID', required: true },
     linkType: { type: 'string', description: 'Link type (e.g. System.LinkTypes.Dependency-forward)', required: true },
     comment: { type: 'string', description: 'Optional comment' },
+    raw: rawWrite,
   },
   async run({ args }) {
     const sourceId = parseId(args.id, 'source work item ID');
     const targetId = parseId(args.targetId, 'target work item ID');
-    await runService(WorkItemService, args, (svc) =>
-      svc.createLink({
-        sourceId,
-        targetId,
-        linkType: args.linkType!,
-        comment: args.comment,
-      }),
-    );
+    await runService(WorkItemService, args, async (svc) => {
+      const updated = await svc.createLink({ sourceId, targetId, linkType: args.linkType!, comment: args.comment });
+      return args.raw ? updated : { ...svc.summarize(updated), linked: targetId, linkType: args.linkType };
+    });
   },
 });
 
@@ -238,10 +370,22 @@ const bulkCreate = defineCommand({
   meta: { name: 'bulk-create', description: 'Bulk create or update work items' },
   args: {
     ...globalOptions,
-    items: { type: 'string', description: 'JSON array of work item create/update params', required: true },
+    items: { type: 'string', description: 'JSON array of work item create/update params (create accepts parentId, tags, sprint)', required: true },
+    raw: rawWrite,
   },
   async run({ args }) {
-    await runService(WorkItemService, args, (svc) => svc.bulkUpdateWorkItems({ workItems: JSON.parse(args.items!) }));
+    let items: unknown;
+    try {
+      items = JSON.parse(args.items!);
+    } catch (err) {
+      failUsage(`--items is not valid JSON: ${(err as Error).message}`);
+    }
+    if (!Array.isArray(items)) failUsage('--items must be a JSON array');
+
+    await runService(WorkItemService, args, async (svc) => {
+      const results = await svc.bulkUpdateWorkItems({ workItems: items as any[] });
+      return args.raw ? { count: results.length, workItems: results } : results.map(wi => svc.summarize(wi));
+    });
   },
 });
 
@@ -250,6 +394,9 @@ export default defineCommand({
   subCommands: {
     list,
     get,
+    view,
+    comments,
+    attachments,
     children,
     history,
     search,

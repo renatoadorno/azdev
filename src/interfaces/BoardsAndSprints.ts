@@ -1,3 +1,5 @@
+import type { WorkItemFilters } from './WorkItems';
+
 /**
  * Interface for getting boards
  */
@@ -49,9 +51,23 @@ export interface GetCurrentSprintParams {
 /**
  * Interface for getting sprint work items
  */
-export interface GetSprintWorkItemsParams {
+export interface GetSprintWorkItemsParams extends WorkItemFilters {
   teamId?: string;
-  sprintId: string;
+  /** Sprint name, number, path, GUID or `current` (default). */
+  sprint?: string;
+}
+
+/**
+ * Interface for the per-person delivery summary of a sprint
+ */
+export interface SprintSummaryParams {
+  teamId?: string;
+  /** Sprint name, number, path, GUID or `current` (default). */
+  sprint?: string;
+  /** Whose delivery to summarize (e-mail or display name); defaults to the authenticated user. */
+  assignedTo?: string;
+  /** Types kept apart from product work (support, meetings, hot fixes). */
+  operationalTypes?: string[];
 }
 
 /**
@@ -59,7 +75,8 @@ export interface GetSprintWorkItemsParams {
  */
 export interface GetSprintCapacityParams {
   teamId?: string;
-  sprintId: string;
+  /** Sprint name, number, path, GUID or `current` (default). */
+  sprint?: string;
 }
 
 /**

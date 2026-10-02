@@ -132,6 +132,32 @@ describe('loadCliConfig — file validation', () => {
   });
 });
 
+describe('loadCliConfig — richTextFormat', () => {
+  it('passes a valid richTextFormat through as the default for rich-text writes', async () => {
+    useConfig({ ...base, richTextFormat: 'markdown' });
+    keychain.set(`pat:${ORG}`, 'tok-123');
+
+    const config = await cfg.loadCliConfig();
+
+    expect(config.richTextFormat).toBe('markdown');
+  });
+
+  it('leaves richTextFormat unset when the file does not set it', async () => {
+    useConfig(base);
+    keychain.set(`pat:${ORG}`, 'tok-123');
+
+    expect((await cfg.loadCliConfig()).richTextFormat).toBeUndefined();
+  });
+
+  it('exits 2 on an unknown richTextFormat instead of silently writing HTML', async () => {
+    useConfig({ ...base, richTextFormat: 'md' });
+    keychain.set(`pat:${ORG}`, 'tok-123');
+
+    await expectExit(2, () => cfg.loadCliConfig());
+    expect(stderr.text()).toContain("richTextFormat must be 'html' or 'markdown'");
+  });
+});
+
 describe('loadCliConfig — credential resolution', () => {
   it('reads the PAT from the keychain for authType pat', async () => {
     useConfig({ ...base, authType: 'pat' });
