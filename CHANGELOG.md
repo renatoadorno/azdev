@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-02
+
+Creating a story's cards and reading what happened to them stop taking several
+round trips.
+
+### Added
+
+- `workitem create` takes `--parent`, `--tags` and `--sprint` and sends them in the
+  same request — one call instead of create + update tags + link parent. With
+  `--parent`, area and sprint are inherited from the parent unless given.
+  `--descriptionFile` reads the description from a file (or stdin), and `--dryRun`
+  prints the resolved request without creating.
+- `--sprint` (on `create`, `update`, `mine`) and the positional of `sprint items`,
+  `sprint summary` and `sprint capacity` accept `current`, a bare number (`82`), a
+  name, a path or a GUID.
+- `@me` in `--assignedTo` / `--to` / flows resolves to the authenticated account.
+- `workitem view <id>`: fields, description and acceptance criteria as text,
+  parent, children, links, PR/branch artifacts, latest comments and image URLs in
+  one call.
+- `workitem comments <id>`: the comments as plain text, oldest first.
+- `workitem attachments <id> [--download <dir>]`: attached files and inline images,
+  downloaded with the configured credential — the token no longer has to be read out
+  of the keychain to fetch an image.
+- `workitem comment --file` and `--format markdown`, which keeps line breaks and
+  `#id` links (the SDK only posts HTML, where `\n` collapses into spaces).
+- `workitem update --title / --descriptionFile / --sprint`; `--fields` is optional.
+- `sprint summary [sprint]`: a person's delivery grouped by story, with the rest of
+  each story's cycle (review, QA, publication by others), operational work apart and
+  cards with no parent listed.
+- `flow list / status / apply`, driven by `flows.json` next to `config.json`: a flow
+  lists the cards a story should have. `apply` creates the missing ones as children
+  (idempotent, `--dryRun`, `--only/--skip/--with`); `status` audits a story — or
+  every story of a sprint — for missing cards, a tests card with no description, tests
+  closed before a later fix with no retest, and publications whose title misses the
+  expected marker.
+- `metadata types --type <name>` to check one type's states.
+- `config paths`: where `config.json`, `flows.json` and `conventions.md` live and
+  whether each exists.
+- Claude Code plugin `azdev`, served by the repository as a marketplace
+  (`/plugin marketplace add renatoadorno/azdev`). It ships three skills: `azdev-cli`
+  (which command answers which question, how to write to the board), `conventions`
+  (reads or creates the per-user `conventions.md` and `flows.json`) and `setup`
+  (installs the matching binary and configures org, project and token). Only
+  `plugin/` is installed, and its version follows the CLI's.
+- Config key `richTextFormat` (`html` | `markdown`): default `--format` for
+  descriptions and comments.
+
+### Changed
+
+- `sprint items` returns hydrated rows (id, type, state, title, assignee, parent) and
+  takes `--mine`, `--assignedTo`, `--type`, `--state`, `--open`; the sprint defaults to
+  `current`. It used to return the raw relation list.
+- `workitem history` returns a field-change timeline (`rev`, `date`, `by`,
+  `changes`, `comment`); `--raw` keeps the revisions.
+- Writes (`create`, `update`, `set-state`, `assign`, `link`, `bulk-create`) print a
+  compact confirmation with the browser URL; `--raw` returns the full work item.
+  `bulk-create --raw` keeps the former `{ count, workItems }` shape.
+- An invalid state on `set-state`, `update` or `create` fails with the valid states
+  of the item's type instead of the API's generic rule error.
+- `project iterations` rows carry the iteration `id`.
+
+### Fixed
+
+- The README's pinned-version install line set `AZDEV_VERSION` for `curl` instead of
+  `bash`, so the version was ignored and the latest release installed.
+
 ## [0.5.1] - 2026-08-28
 
 ### Changed
@@ -122,7 +188,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.1...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/renatoadorno/azdev/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/renatoadorno/azdev/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/renatoadorno/azdev/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/renatoadorno/azdev/compare/v0.3.0...v0.4.0
