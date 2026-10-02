@@ -19,6 +19,7 @@ import {
   type SlimIterationNode,
 } from "./iterations";
 import { ME, slimWorkItem } from "./workItemUtils";
+import { resolveField, resolveFieldOffline, suggestFields, type FieldDefinition } from "./fieldNames";
 
 export const CLASSIFICATION_DEPTH = 10;
 
@@ -36,6 +37,7 @@ export class AzureDevOpsService {
   protected authHandler: IRequestHandler | undefined;
   private currentUserPromise?: Promise<string>;
   private iterationsPromise?: Promise<SlimIterationNode[]>;
+  private fieldsPromise?: Promise<FieldDefinition[]>;
 
   constructor(config: AzureDevOpsConfig) {
     this.config = config;
@@ -161,6 +163,31 @@ export class AzureDevOpsService {
     return value.trim().toLowerCase() === ME ? this.currentUser() : value;
   }
 
+  /** Every field of the project, reference and display name. */
+  protected projectFields(): Promise<FieldDefinition[]> {
+    this.fieldsPromise ??= this.getWorkItemTrackingApi()
+      .then(witApi => witApi.getFields(this.config.project))
+      .then(fields => (fields ?? []).map(f => ({ referenceName: f.referenceName, name: f.name })));
+    return this.fieldsPromise;
+  }
+
+  /**
+   * Field names as written (`assignedTo`, `Remaining Work`, `Custom.Squad`) → reference
+   * names. The project's field list is fetched only for a name no alias covers.
+   */
+  protected async resolveFieldNames(names: string[]): Promise<string[]> {
+    const offline = names.map(resolveFieldOffline);
+    if (offline.every(Boolean)) return offline as string[];
+    const known = await this.projectFields();
+    return names.map((name, i) => {
+      const ref = offline[i] ?? resolveField(name, known);
+      if (ref) return ref;
+      const suggestions = suggestFields(name, known);
+      const hint = suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '';
+      throw new Error(`Unknown field "${name}".${hint} List them with 'azdev metadata fields'.`);
+    });
+  }
+
   private projectIterations(): Promise<SlimIterationNode[]> {
     this.iterationsPromise ??= this.getWorkItemTrackingApi()
       .then(witApi => witApi.getClassificationNode(this.config.project, ITERATIONS_GROUP, undefined, CLASSIFICATION_DEPTH))
@@ -221,10 +248,23 @@ export class AzureDevOpsService {
 
   /** Runs a WIQL query and returns the ids it matched, in query order. */
   protected async queryIds(query: string, top?: number): Promise<number[]> {
-    const witApi = await this.getWorkItemTrackingApi();
-    const result = await witApi.queryByWiql({ query }, { project: this.config.project }, undefined, top);
+    const result = await this.runWiql(query, top);
     return (result.workItems ?? [])
       .map(w => w.id)
       .filter((id): id is number => typeof id === 'number');
+  }
+
+  /** Runs a WIQL query; past 20,000 matches (VS402337) the error asks to narrow it. */
+  protected async runWiql(query: string, top?: number) {
+    const witApi = await this.getWorkItemTrackingApi();
+    try {
+      return await witApi.queryByWiql({ query }, { project: this.config.project }, undefined, top);
+    } catch (err) {
+      const message = (err as Error)?.message ?? '';
+      if (!/VS402337/.test(message)) throw err;
+      throw Object.assign(new Error(`${message} — narrow the filters (type, sprint, dates)`), {
+        statusCode: (err as { statusCode?: number }).statusCode,
+      });
+    }
   }
 }

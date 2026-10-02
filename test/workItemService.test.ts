@@ -283,6 +283,71 @@ describe('WorkItemService — missing work items', () => {
   });
 });
 
+describe('WorkItemService.queryWorkItems', () => {
+  const ITEMS: Record<number, Record<string, unknown>> = {
+    1: { 'System.State': 'Done', 'System.AssignedTo': { displayName: 'Ana' } },
+    2: { 'System.State': 'New', 'System.AssignedTo': { displayName: 'Ana' } },
+    3: { 'System.State': 'Done', 'System.AssignedTo': { displayName: 'Bia' } },
+  };
+  const querying = (extra: Record<string, unknown> = {}) => makeService({
+    queryByWiql: async (...args: unknown[]) => {
+      ((extra.queries as unknown[][]) ?? []).push(args);
+      return { workItems: [{ id: 1 }, { id: 2 }, { id: 3 }], columns: [{ referenceName: 'System.Title' }] };
+    },
+    getWorkItems: async (ids: number[], fields: string[]) =>
+      ids.map(id => ({ id, fields: Object.fromEntries(Object.entries(ITEMS[id]!).filter(([ref]) => fields.includes(ref))) })),
+    getFields: async () => {
+      (extra.fieldCalls as number[]).push(1);
+      return [{ referenceName: 'Custom.Squad', name: 'Squad' }];
+    },
+  });
+
+  it('builds the WIQL from the flags, resolving short names, without running it', async () => {
+    const fieldCalls: number[] = [];
+    const queries: unknown[][] = [];
+    const { svc } = querying({ fieldCalls, queries });
+    const result = await svc.queryWorkItems({ mine: true, where: "[squad] = 'Core' AND [priority] = 1", orderBy: 'closed desc', printWiql: true });
+    expect(result).toEqual({
+      wiql: "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.AssignedTo] = @me AND ([Custom.Squad] = 'Core' AND [Microsoft.VSTS.Common.Priority] = 1) ORDER BY [Microsoft.VSTS.Common.ClosedDate] DESC",
+    });
+    expect(fieldCalls).toHaveLength(1);
+    expect(queries).toEqual([]);
+  });
+
+  it('counts the matches, ignoring --top', async () => {
+    const queries: unknown[][] = [];
+    const { svc } = querying({ queries });
+    expect(await svc.queryWorkItems({ states: ['Done'], top: 1, count: true })).toEqual({ count: 3 });
+    expect(queries[0]![3]).toBeUndefined();
+  });
+
+  it('groups the matches by fields', async () => {
+    const { svc } = querying();
+    expect(await svc.queryWorkItems({ groupBy: ['state', 'assignedTo'] })).toEqual({
+      total: 3,
+      groups: [
+        { State: 'Done', AssignedTo: 'Ana', count: 1 },
+        { State: 'Done', AssignedTo: 'Bia', count: 1 },
+        { State: 'New', AssignedTo: 'Ana', count: 1 },
+      ],
+    });
+  });
+
+  it('returns the asked columns in the asked order, empty where an item has no value', async () => {
+    const { svc } = querying();
+    expect(await svc.queryWorkItems({ fields: ['assignedTo', 'closed', 'state'], top: 2 })).toEqual([
+      { id: 1, AssignedTo: 'Ana', ClosedDate: '', State: 'Done' },
+      { id: 2, AssignedTo: 'Ana', ClosedDate: '', State: 'New' },
+      { id: 3, AssignedTo: 'Bia', ClosedDate: '', State: 'Done' },
+    ]);
+  });
+
+  it('names an unknown field with suggestions', async () => {
+    const { svc } = querying({ fieldCalls: [] });
+    await expect(svc.queryWorkItems({ fields: ['squa'] })).rejects.toThrow('Unknown field "squa". Did you mean: Custom.Squad (Squad)?');
+  });
+});
+
 describe('WorkItemService.summarize', () => {
   it('confirms a write with the key fields and a browser link', () => {
     const { svc } = makeService();

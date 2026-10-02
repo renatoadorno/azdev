@@ -90,6 +90,49 @@ export interface SearchWorkItemsParams {
 }
 
 /**
+ * Interface for a free query: filter flags, a free WIQL condition, or a whole WIQL query
+ */
+export interface QueryWorkItemsParams {
+  mine?: boolean;
+  /** E-mail or display name; `@me` is the authenticated user. */
+  assignedTo?: string;
+  unassigned?: boolean;
+  types?: string[];
+  states?: string[];
+  /** Exclude finished states (Done/Closed/Removed/Completed). */
+  openOnly?: boolean;
+  /** Sprint name, number, `current` or path. */
+  sprint?: string;
+  /** Area path, subareas included. */
+  area?: string;
+  /** Every one of these tags. */
+  tags?: string[];
+  /** Text in the title or the description. */
+  text?: string;
+  parentId?: number;
+  /** `7d`, `2w`, `3m`, `1y`, `today` or `YYYY-MM-DD`. */
+  createdSince?: string;
+  changedSince?: string;
+  closedSince?: string;
+  /** Free WIQL condition; `[shortName]` is resolved (`[assignedTo] = @me`). */
+  where?: string;
+  /** A whole WIQL query, run as given, instead of the filters. */
+  wiql?: string;
+  /** Columns to return (short, display or reference names). */
+  fields?: string[];
+  /** `changed desc, id`. */
+  orderBy?: string;
+  /** Max rows (0 = no limit). */
+  top?: number;
+  /** Only how many items match. */
+  count?: boolean;
+  /** Count the matches by these fields instead of listing them. */
+  groupBy?: string[];
+  /** Return the WIQL instead of running it. */
+  printWiql?: boolean;
+}
+
+/**
  * Interface for recently updated work items
  */
 export interface RecentWorkItemsParams {

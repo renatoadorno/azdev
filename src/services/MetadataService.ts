@@ -15,6 +15,14 @@ export class MetadataService extends AzureDevOpsService {
   }
 
   /**
+   * List the fields of the project, with the reference name queries take.
+   */
+  public async getFields(): Promise<any[]> {
+    const witApi = await this.getWorkItemTrackingApi();
+    return witApi.getFields(this.config.project);
+  }
+
+  /**
    * List the tags defined in the project.
    */
   public async getTags(): Promise<any[]> {

@@ -19,6 +19,7 @@ import type {
   WorkItemHistoryParams,
   ChildWorkItemsParams,
   ListCommentsParams,
+  QueryWorkItemsParams,
 } from '../interfaces/WorkItems';
 import {
   HIERARCHY_FORWARD,
@@ -28,10 +29,20 @@ import {
   fieldOperations,
   parentRelationOperation,
   parseTags,
+  shortKey,
   simplifyValue,
   slimWorkItem,
   wiqlEscape,
 } from './workItemUtils';
+import {
+  DEFAULT_ORDER_BY,
+  buildOrderBy,
+  buildWiql,
+  groupCounts,
+  parseSince,
+  queryConditions,
+  rewriteFieldRefs,
+} from './queryBuilder';
 import { richTextToPlain } from './richText';
 import { checkDescription, fillTemplate, needsParentTitle } from './descriptionTemplates';
 
@@ -64,6 +75,19 @@ export class WorkItemService extends AzureDevOpsService {
     return { ...slimWorkItem(workItem, WRITE_SUMMARY_FIELDS), url: this.webUrl(workItem.id) };
   }
 
+  /** Ids of a WIQL result, flat or tree (link query targets, without `excludeId`). */
+  private idsOf(queryResult: any, excludeId?: number): number[] {
+    if (queryResult?.workItems?.length) {
+      return queryResult.workItems.map((w: any) => w.id).filter((x: any) => typeof x === 'number');
+    }
+    const seen = new Set<number>();
+    for (const rel of queryResult?.workItemRelations ?? []) {
+      const tid = rel?.target?.id;
+      if (typeof tid === 'number' && tid !== excludeId) seen.add(tid);
+    }
+    return [...seen];
+  }
+
   /**
    * Hydrate a WIQL result (flat or tree), using the queried columns as fields.
    */
@@ -71,20 +95,72 @@ export class WorkItemService extends AzureDevOpsService {
     const fields: string[] = (queryResult?.columns ?? [])
       .map((c: any) => c.referenceName)
       .filter(Boolean);
+    return this.hydrate(this.idsOf(queryResult, excludeId), fields.length ? fields : undefined);
+  }
 
-    let ids: number[] = [];
-    if (queryResult?.workItems?.length) {
-      ids = queryResult.workItems.map((w: any) => w.id).filter((x: any) => typeof x === 'number');
-    } else if (queryResult?.workItemRelations?.length) {
-      const seen = new Set<number>();
-      for (const rel of queryResult.workItemRelations) {
-        const tid = rel?.target?.id;
-        if (typeof tid === 'number' && tid !== excludeId) seen.add(tid);
-      }
-      ids = [...seen];
+  /**
+   * The WIQL of a free query: filters, a free condition and an order, with field
+   * names resolved — or the whole query as given.
+   */
+  public async buildQuery(params: QueryWorkItemsParams): Promise<string> {
+    if (params.wiql) return params.wiql.trim();
+
+    // Collect the short names first: resolving may need the project's field list.
+    const names: string[] = [];
+    const collect = (name: string) => (names.push(name), name);
+    if (params.where) rewriteFieldRefs(params.where, collect);
+    if (params.orderBy) buildOrderBy(params.orderBy, collect);
+    const refs = new Map(names.length ? (await this.resolveFieldNames(names)).map((ref, i) => [names[i]!, ref]) : []);
+    const resolve = (name: string) => refs.get(name) ?? name;
+
+    const conditions = queryConditions({
+      mine: params.mine,
+      assignedTo: params.assignedTo,
+      unassigned: params.unassigned,
+      types: params.types,
+      states: params.states,
+      openOnly: params.openOnly,
+      iterationPath: params.sprint ? (await this.resolveIteration(params.sprint)).path : undefined,
+      areaPath: params.area,
+      tags: params.tags,
+      text: params.text,
+      parentId: params.parentId,
+      createdSince: params.createdSince ? parseSince(params.createdSince) : undefined,
+      changedSince: params.changedSince ? parseSince(params.changedSince) : undefined,
+      closedSince: params.closedSince ? parseSince(params.closedSince) : undefined,
+      where: params.where ? rewriteFieldRefs(params.where, resolve) : undefined,
+    });
+    return buildWiql(conditions, params.orderBy ? buildOrderBy(params.orderBy, resolve) : DEFAULT_ORDER_BY);
+  }
+
+  /** Runs a free query: rows, a count, or counts grouped by fields. */
+  public async queryWorkItems(params: QueryWorkItemsParams): Promise<unknown> {
+    const wiql = await this.buildQuery(params);
+    if (params.printWiql) return { wiql };
+
+    const fields = params.fields ? await this.resolveFieldNames(params.fields) : undefined;
+    const groupBy = params.groupBy ? await this.resolveFieldNames(params.groupBy) : undefined;
+    const everything = params.count || groupBy;
+    const top = everything || !params.top ? undefined : params.top;
+
+    const result = await this.runWiql(wiql, top);
+    const ids = this.idsOf(result);
+
+    if (params.count) return { count: ids.length };
+    if (groupBy) {
+      const rows = await this.hydrate(ids, groupBy);
+      return { total: ids.length, groups: groupCounts(rows, groupBy.map(shortKey)) };
     }
-
-    return this.hydrate(ids, fields.length ? fields : undefined);
+    if (top && ids.length >= top) {
+      console.error(`Warning: showing the first ${top} matches — raise --top, or use --count/--groupBy for totals.`);
+    }
+    // A whole WIQL query keeps its own columns unless --fields says otherwise.
+    const columns = fields ?? (params.wiql ? (result.columns ?? []).map(c => c.referenceName!).filter(Boolean) : []);
+    const rows = await this.hydrate(ids, columns.length ? columns : DEFAULT_HYDRATE_FIELDS);
+    if (!fields) return rows;
+    // The asked columns, in the asked order, empty where an item has no value — one table every time.
+    const keys = [...new Set(fields.map(shortKey))].filter(key => key !== 'Id');
+    return rows.map(row => ({ id: row.id, ...Object.fromEntries(keys.map(key => [key, row[key] ?? ''])) }));
   }
 
   /**
