@@ -88,7 +88,7 @@ src/
       project.ts    — 10 subcommands
       metadata.ts   — 2 subcommands (types, tags)
       flow.ts       — list / status / apply
-      config.ts     — show / set / get / unset
+      config.ts     — show / set / get / unset / paths
     formatters/
       index.ts      — format(data, flags) selector
       toon.ts       — encode() from @toon-format/toon (default)
@@ -121,6 +121,34 @@ Built with `--compile --minify --bytecode`, and `--define BUILD_VERSION` carryin
 3. Service calls `azure-devops-node-api`
 4. Response is formatted via `format(data, flags)` → toon (default), JSON, or Markdown
 
+### Claude Code plugin
+
+The repo is also a marketplace: `.claude-plugin/marketplace.json` points at
+`plugin/` (`source: "./plugin"`), so installing copies only `plugin/` — never
+`src/`, `node_modules/` or `dist/`.
+
+```
+plugin/
+  .claude-plugin/plugin.json
+  skills/azdev-cli/          — usage router + references/commands.md (every flag)
+  skills/conventions/        — reads/creates the per-user conventions.md and flows.json
+    assets/                  — conventions.template.md, flows.example.json
+  skills/setup/              — /azdev:setup: binary matching the plugin version, org, project, token
+```
+
+`test/plugin.test.ts` enforces what `claude plugin validate` does not check:
+- `package.json`, `plugin.json` and the marketplace entry carry the same version — bump all three together;
+- strict YAML frontmatter in every `SKILL.md` (an unquoted `: ` silently drops name and description);
+- every `azdev <group> <sub>` mentioned in a skill exists, and the subcommand count in `azdev-cli` is right;
+- every subcommand and flag of the CLI appears in `skills/azdev-cli/references/commands.md` — a new flag fails the suite until it is documented there;
+- `flows.example.json` passes `validateFlows`.
+
+The plugin is public: skills stay generic. Team-specific rules (state quirks, backlog
+sprint, people) belong in the user's `conventions.md`, next to `config.json`.
+
+Validate manifests with `claude plugin validate .` (marketplace) and
+`claude plugin validate ./plugin`.
+
 ### Adding a new command
 
 1. Add param interface to the appropriate `src/interfaces/*.ts` file
@@ -141,6 +169,9 @@ const mine = defineCommand({
 formatting and `exitWithError`. Do not re-implement it per subcommand. Argument
 parsing that must run *before* the call (e.g. `parseId`) stays above it; a
 non-default view goes in an `async` callback that returns the value to print.
+
+4. Document the subcommand and each flag in `plugin/skills/azdev-cli/references/commands.md`
+   (the plugin test fails otherwise), and in `docs/commands.md`.
 
 ### Exit codes
 

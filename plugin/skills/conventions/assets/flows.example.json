@@ -1,0 +1,48 @@
+{
+  "operationalTypes": ["Support", "meetings", "hot fix"],
+  "flows": {
+    "story": {
+      "description": "Story with code: technical tests, code review, publication and implementation",
+      "parentTypes": ["Product Backlog Item", "User Story"],
+      "cards": [
+        {
+          "key": "tests",
+          "type": "Task",
+          "title": "Technical tests: {title}",
+          "match": "technical tests",
+          "assignedTo": "@me",
+          "requireDescription": true,
+          "retestAfter": ["Bug"],
+          "description": "## What was tested\n\n## How (suite, environment, commands)\n\n## Result\n"
+        },
+        {
+          "key": "review",
+          "type": "Task",
+          "title": "Code review: {title}",
+          "match": "code review",
+          "assignedTo": "reviewer@example.com"
+        },
+        {
+          "key": "pub-hml",
+          "type": "Task",
+          "title": "{title} [HOMOLOG]",
+          "match": "\\[\\s*(HOMOLOG|HML)\\s*\\]",
+          "optional": true
+        },
+        {
+          "key": "pub-prod",
+          "type": "Task",
+          "title": "{title} [PROD]",
+          "match": "\\[\\s*PROD\\s*\\]"
+        },
+        {
+          "key": "impl",
+          "type": "Task",
+          "title": "Implementation: {title}",
+          "assignedTo": "@me",
+          "state": "To Do"
+        }
+      ]
+    }
+  }
+}

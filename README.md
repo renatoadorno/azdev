@@ -12,10 +12,10 @@ curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh 
 
 Downloads the latest release for your platform (Darwin arm64 or Linux x86-64), verifies the SHA256 checksum, and installs to `~/.local/bin/azdev`.
 
-To install a specific version:
+To install a specific version (the variable goes to `bash`, which runs the script):
 
 ```bash
-AZDEV_VERSION=v0.4.0 curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | AZDEV_VERSION=v0.5.2 bash
 ```
 
 Add `~/.local/bin` to your PATH if not already present:
@@ -23,6 +23,22 @@ Add `~/.local/bin` to your PATH if not already present:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+## Claude Code plugin
+
+The repository is also a Claude Code marketplace with one plugin, `azdev`, that teaches the agent the CLI:
+
+- **`azdev-cli`** — which command answers which question in one call, how to write descriptions and comments, how to create and audit a story's cards.
+- **`conventions`** — reads, or creates by inspecting the board and asking you, a personal `conventions.md` with your team's rules (types without `Removed`, backlog sprint, title markers, who reviews and publishes) and a `flows.json` for `azdev flow`. Both stay next to `config.json`, outside any repository.
+- **`setup`** (`/azdev:setup [orgUrl] [project]`) — installs the binary matching the plugin version, configures org and project, and walks you through storing the token in the keychain without pasting it in the chat.
+
+```text
+/plugin marketplace add renatoadorno/azdev
+/plugin install azdev@azdev
+/azdev:setup
+```
+
+The plugin version follows the CLI version. Only `plugin/` is installed — the CLI source stays out.
 
 ## Quick Start
 
@@ -62,7 +78,7 @@ Override the default project for any command with `--project <name>`.
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |
 | `metadata` | 2 | Work item types (with states) and tags of the current project |
 | `flow` | 3 | Story cycles from `flows.json`: create a story's standard cards, audit a story or a sprint |
-| `config` | 4 | Show, get, set and unset CLI configuration |
+| `config` | 5 | Show, get, set and unset CLI configuration; locate config, flows and conventions files |
 
 Full command reference: [docs/commands.md](./docs/commands.md)
 

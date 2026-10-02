@@ -1,0 +1,17 @@
+{
+  "name": "azdev",
+  "owner": {
+    "name": "Renato Adorno"
+  },
+  "description": "Azure DevOps work items, sprints and story flows from Claude Code, through the azdev CLI.",
+  "plugins": [
+    {
+      "name": "azdev",
+      "source": "./plugin",
+      "description": "Skills for the azdev CLI: query and create Azure DevOps work items in one call, audit a story's cycle, keep the team's conventions, and install/configure the CLI.",
+      "version": "0.5.1",
+      "category": "productivity",
+      "keywords": ["azure-devops", "work-items", "sprints", "boards", "cli"]
+    }
+  ]
+}
