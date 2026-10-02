@@ -105,6 +105,20 @@ describe('configPath', () => {
   });
 });
 
+describe('configFiles', () => {
+  it('places flows.json and conventions.md next to config.json and reports which exist', () => {
+    const file = useConfig(base);
+    const dir = file.slice(0, file.lastIndexOf('/'));
+    fs.writeFileSync(`${dir}/conventions.md`, '# team');
+
+    expect(cfg.configFiles()).toEqual({
+      config: { path: file, exists: true },
+      flows: { path: `${dir}/flows.json`, exists: false },
+      conventions: { path: `${dir}/conventions.md`, exists: true },
+    });
+  });
+});
+
 describe('loadCliConfig — file validation', () => {
   it('exits 2 when the config file is missing', async () => {
     useConfig(null);

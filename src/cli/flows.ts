@@ -1,12 +1,11 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import type { FlowsFile } from '../interfaces/Flows';
 import { validateFlows } from '../services/flowRules';
-import { configPath } from './config';
+import { siblingPath } from './config';
 
 /** flows.json lives next to config.json, so AZDEV_CONFIG_PATH isolates both. */
 export function flowsPath(): string {
-  return path.join(path.dirname(configPath()), 'flows.json');
+  return siblingPath('flows.json');
 }
 
 function readFlowsFile(): unknown | null {

@@ -22,6 +22,21 @@ export function configPath(): string {
   return path.join(base, 'azdev', 'config.json');
 }
 
+/** A file kept next to config.json (flows.json, conventions.md), so AZDEV_CONFIG_PATH moves it too. */
+export function siblingPath(fileName: string): string {
+  return path.join(path.dirname(configPath()), fileName);
+}
+
+/** The per-user files azdev and its Claude Code skills read, and whether each exists. */
+export function configFiles(): Record<'config' | 'flows' | 'conventions', { path: string; exists: boolean }> {
+  const entry = (file: string) => ({ path: file, exists: fs.existsSync(file) });
+  return {
+    config: entry(configPath()),
+    flows: entry(siblingPath('flows.json')),
+    conventions: entry(siblingPath('conventions.md')),
+  };
+}
+
 interface RawCliConfig {
   orgUrl?: string;
   project?: string;

@@ -1174,6 +1174,16 @@ azdev config get project
 
 ---
 
+### `config paths`
+
+Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`) and `conventions` (`conventions.md`, read by the Claude Code plugin's skills). All three sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
+
+```
+azdev config paths
+```
+
+---
+
 ### `config unset`
 
 Remove a configuration value, or delete a stored credential from the OS keychain.

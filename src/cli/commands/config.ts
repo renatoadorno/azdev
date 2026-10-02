@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import { globalOptions, runCommand } from '../command';
-import { loadCliConfig, requireConfigFile, unsetCliConfig, writeCliConfig } from '../config';
+import { configFiles, loadCliConfig, requireConfigFile, unsetCliConfig, writeCliConfig } from '../config';
 import { format } from '../formatters/index';
 import { isSecretKey, redactSecrets, resolveSecret } from '../secrets';
 
@@ -59,6 +59,16 @@ const get = defineCommand({
   },
 });
 
+const paths = defineCommand({
+  meta: { name: 'paths', description: 'Show where config.json, flows.json and conventions.md live, and whether each exists' },
+  args: { ...outputOptions },
+  async run({ args }) {
+    await runCommand(async () => {
+      console.log(format(configFiles(), args));
+    });
+  },
+});
+
 const unset = defineCommand({
   meta: { name: 'unset', description: 'Remove a config value or a stored credential' },
   args: { key: keyArg },
@@ -75,5 +85,5 @@ const unset = defineCommand({
 
 export default defineCommand({
   meta: { name: 'config', description: 'Configuration commands' },
-  subCommands: { show, set, get, unset },
+  subCommands: { show, set, get, unset, paths },
 });
