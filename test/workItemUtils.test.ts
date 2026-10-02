@@ -17,6 +17,11 @@ describe('buildFilterClauses', () => {
     ]);
   });
 
+  it('turns assignedTo @me into the unquoted WIQL macro', () => {
+    expect(buildFilterClauses({ assignedTo: '@me' })).toEqual(['[System.AssignedTo] = @me']);
+    expect(buildFilterClauses({ assignedTo: ' @ME ' })).toEqual(['[System.AssignedTo] = @me']);
+  });
+
   it('lets mine win over assignedTo', () => {
     expect(buildFilterClauses({ mine: true, assignedTo: 'alice@x.dev' })).toEqual(['[System.AssignedTo] = @me']);
   });

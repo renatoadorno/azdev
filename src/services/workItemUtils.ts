@@ -52,7 +52,9 @@ export function idFromWorkItemUrl(url?: string): number | undefined {
 export function buildFilterClauses(filters: WorkItemFilters, scope?: string): string[] {
   const field = (name: string) => (scope ? `[${scope}].[${name}]` : `[${name}]`);
   const clauses: string[] = [];
-  if (filters.mine) clauses.push(`${field('System.AssignedTo')} = @me`);
+  // `@me` is a WIQL macro only unquoted; quoted it would match a user literally named "@me".
+  const me = filters.mine || filters.assignedTo?.trim().toLowerCase() === ME;
+  if (me) clauses.push(`${field('System.AssignedTo')} = @me`);
   else if (filters.assignedTo) clauses.push(`${field('System.AssignedTo')} = '${wiqlEscape(filters.assignedTo)}'`);
   if (filters.state) clauses.push(`${field('System.State')} = '${wiqlEscape(filters.state)}'`);
   if (filters.openOnly) {
