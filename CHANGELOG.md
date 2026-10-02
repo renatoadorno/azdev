@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 A free query, progress and delivery numbers, and card titles of a flow set per
 feature.
 
@@ -250,7 +252,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.5.3...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/renatoadorno/azdev/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/renatoadorno/azdev/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/renatoadorno/azdev/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/renatoadorno/azdev/compare/v0.5.0...v0.5.1

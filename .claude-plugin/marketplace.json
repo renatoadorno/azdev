@@ -9,7 +9,7 @@
       "name": "azdev",
       "source": "./plugin",
       "description": "Skills for the azdev CLI: query and create Azure DevOps work items in one call, audit a story's cycle, keep the team's conventions, and install/configure the CLI.",
-      "version": "0.5.3",
+      "version": "0.6.0",
       "category": "productivity",
       "keywords": ["azure-devops", "work-items", "sprints", "boards", "cli"]
     }
