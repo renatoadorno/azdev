@@ -25,7 +25,7 @@ azdev config unset <key>
 | `domain` | NTLM only | Windows domain |
 | `richTextFormat` | No | Default format of descriptions and comments written by `create`/`update`/`comment`/`bulk-create` when `--format` is absent: `html` (API default) or `markdown`. Any other value exits `2` |
 
-Story flows for `azdev flow` live in a separate `flows.json` next to `config.json` — see [flow](./commands.md#flow).
+Story flows for `azdev flow` live in a separate `flows.json` next to `config.json` — see [flow](./commands.md#flow). Description templates live in `templates/`, also next to it: one `<type>.md` per work item type (or a variant like `Publication [PROD].md`), the model each description is written from — see [`workitem template`](./commands.md#workitem-template). `azdev config paths` shows all of them.
 
 ## Credential Storage
 

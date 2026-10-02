@@ -152,6 +152,31 @@ azdev workitem attachments 1200 --download ./wi-1200
 
 ---
 
+### `workitem template`
+
+Description templates from the `templates/` directory next to `config.json` (one `<name>.md` per work item type, or a variant such as `Publication [PROD].md`). A template is the **model** a card's description is written from — `create`, `bulk-create` and `flow apply` refuse a card of that type whose description is missing, still the untouched template, or still holding the template's `<…>` prompts, and warn when it leaves out one of the template's `##` sections.
+
+```
+azdev workitem template [name] [--title <t>] [--parent <id>]
+```
+
+| Argument/Option | Type | Description |
+|---|---|---|
+| `name` | string | Template to print as raw Markdown; without it, list the templates and their sections |
+| `--title` | string | Fill `{title}` with the card's title |
+| `--parent` | number | Fill `{parentId}` and `{parentTitle}` from this parent (reads it) |
+
+Placeholders that are not given stay visible.
+
+**Examples:**
+
+```bash
+azdev workitem template
+azdev workitem template "Publication [PROD]" --title "Checkout [PROD]" --parent 1200
+```
+
+---
+
 ### `workitem children`
 
 List the children of a work item. Direct children by default; use `--recursive` for the whole subtree. Results are hydrated (id, type, state, title, assignee, parent).
@@ -293,6 +318,8 @@ azdev workitem create --type <type> --title <title> [options]
 | `--sprint` | string | No | Sprint (`current`, `82`, `Sprint 82`, path) |
 | `--description` | string | No | Description (HTML by default; Markdown with `--format markdown`) |
 | `--descriptionFile` | path | No | Read the description from a file (`-` = stdin) — keeps long text out of shell quoting |
+| `--template` | string | No | Template the description is written from (default: `templates/<type>.md`, when it exists). The description is then required and checked against it |
+| `--noTemplate` | boolean | No | Skip the template check |
 | `--assignedTo` | string | No | Assign to user (display name, email or `@me`) |
 | `--state` | string | No | Initial state |
 | `--areaPath` | string | No | Area path |
@@ -302,6 +329,8 @@ azdev workitem create --type <type> --title <title> [options]
 | `--raw` | boolean | No | Return the full created work item |
 
 Type or state name uncertain? Run `azdev metadata types --type <name>`. An invalid state fails with the list of the type's valid states.
+
+When a template applies (see `workitem template`), write the description from it with the task's own content: a missing description, the untouched template or a leftover `<…>` prompt fails before anything is sent; a template section left out prints a warning. The confirmation reports the `template` used, and the description is written as Markdown.
 
 **Examples:**
 
@@ -1018,7 +1047,8 @@ Card fields:
 
 - **`key`, `type`, `title`** (required). `title` and `description` take `{title}` and `{id}` of the story.
 - **`match`**: case-insensitive regex an existing child's title must match to count as this card. Without it, any child of `type` counts. Two cards of the same type need distinct `match` patterns — the file is rejected otherwise, since `apply` would otherwise recreate a card on every run.
-- **`assignedTo`, `state`, `tags`, `sprint`, `description`**: what `apply` creates the card with. Descriptions are written as Markdown. Without `sprint`, the card lands in the story's sprint.
+- **`assignedTo`, `state`, `tags`, `sprint`**: what `apply` creates the card with. Without `sprint`, the card lands in the story's sprint.
+- **`template`, `description`**: the model the card's description is written from — `description` inline (with the story's `{title}`/`{id}`), else the `templates/` file named by `template`, else the one named after `type`. The descriptions themselves come from `apply --descriptions`.
 - **`optional`**: `status` does not flag it as missing, and `apply` only creates it with `--with <key>`.
 - **`requireDescription`**: `status` flags the card when its description is empty or still the untouched template.
 - **`retestAfter`**: types whose closing *after* this card makes it stale — a fix landing after the technical tests. A comment on the card, or another card of the same key, closed after the fix clears it.
@@ -1073,7 +1103,7 @@ azdev flow status --sprint current --mine
 Create, as children of the story, the cards of its flow that it does not have yet. **Idempotent**: a card that already exists (same type, title matching `match`) is reported as `exists` and never created twice, so re-running after a failure only creates what is still missing. Optional cards are created only when asked.
 
 ```
-azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <s>] [--dryRun]
+azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <s>] [--descriptions <dir>] [--noTemplate] [--dryRun]
 ```
 
 | Argument/Option | Type | Description |
@@ -1084,7 +1114,11 @@ azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--wi
 | `--skip` | csv | Every card except these keys |
 | `--with` | csv | Optional card keys to create too |
 | `--sprint` | string | Sprint for every created card, over the card's own `sprint` and the story's |
-| `--dryRun` | boolean | Show the plan (`exists`, `would-create`, `skipped`) with resolved assignee and sprint, without creating |
+| `--descriptions` | path | Directory with one `<key>.md` per card to create — the card's own description, written from its template |
+| `--noTemplate` | boolean | Create without descriptions, skipping the template requirement |
+| `--dryRun` | boolean | Show the plan (`exists`, `would-create`, `skipped`) with resolved assignee and sprint, the `template` each card follows and whether its `description` is there, without creating |
+
+A card that has a model (template file or inline `description`) needs its `<key>.md`. A missing, untouched or unknown-key description fails before **any** card is created, so the story is never left half-built.
 
 An unknown card key exits `1` before anything is created. Each row reports `key`, `action`, `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`.
 
@@ -1176,7 +1210,7 @@ azdev config get project
 
 ### `config paths`
 
-Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`) and `conventions` (`conventions.md`, read by the Claude Code plugin's skills). All three sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
+Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`), `conventions` (`conventions.md`, read by the Claude Code plugin's skills) and `templates` (the description templates directory). All sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
 
 ```
 azdev config paths

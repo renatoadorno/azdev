@@ -19,6 +19,11 @@ Project `<project>` at `<orgUrl>`. What `flows.json` cannot express: rules, role
 - Iterations nobody looks at (an item sent there disappears).
 - Where cards that outlive the story's sprint go (publication, follow-ups).
 
+## Creating and handing over
+
+- Who a new card is assigned to at first (for example: always to me, to review it before anyone else sees it).
+- When and to whom it is handed over afterwards, per card type (`azdev workitem assign <id> --to <email>`).
+
 ## Story cycle and roles
 
 - Who usually reviews, tests and publishes, with emails.

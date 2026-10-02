@@ -67,6 +67,8 @@ src/
     flowRules.ts     — flows.json validation, card matching, audit, apply plan
     sprintSummary.ts — delivery grouped by story
     history.ts       — revisions → field-change timeline
+    descriptionTemplates.ts — template fill + checkDescription (a template is a model:
+                              missing, untouched or leftover <…> prompts are refused)
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
@@ -76,13 +78,15 @@ src/
     secrets.ts      — Bun.secrets wrapper: resolveSecret/storeSecret/deleteSecret/redactSecrets
                       Credentials live in the OS keychain (service com.azdev.cli)
     flows.ts        — flowsPath() (next to config.json) / loadFlows() (exit 2 when missing/invalid)
+    templates.ts    — templates/ next to config.json: loadTemplates(), chooseTemplate() (type
+                      default, --template, --noTemplate), readCardDescriptions() for flow apply
     errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
     parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
     warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 17 subcommands
+      workitem.ts   — 18 subcommands
       sprint.ts     — 5 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands

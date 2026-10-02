@@ -29,7 +29,7 @@ export PATH="$HOME/.local/bin:$PATH"
 The repository is also a Claude Code marketplace with one plugin, `azdev`, that teaches the agent the CLI:
 
 - **`azdev-cli`** — which command answers which question in one call, how to write descriptions and comments, how to create and audit a story's cards.
-- **`conventions`** — reads, or creates by inspecting the board and asking you, a personal `conventions.md` with your team's rules (types without `Removed`, backlog sprint, title markers, who reviews and publishes) and a `flows.json` for `azdev flow`. Both stay next to `config.json`, outside any repository.
+- **`conventions`** — reads, or creates by inspecting the board and asking you, a personal `conventions.md` with your team's rules (types without `Removed`, backlog sprint, title markers, who reviews and publishes), a `flows.json` for `azdev flow`, and `templates/` with the model of each card type's description. All stay next to `config.json`, outside any repository.
 - **`setup`** (`/azdev:setup [orgUrl] [project]`) — installs the binary matching the plugin version, configures org and project, and walks you through storing the token in the keychain without pasting it in the chat.
 
 ```text
