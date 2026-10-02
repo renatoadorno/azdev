@@ -91,6 +91,28 @@ describe('FlowService.applyFlow with templates', () => {
       .rejects.toThrow('Descriptions for unknown card key(s): revew');
   });
 
+  it('titles the cards with the feature name, keeping the story title for {parentTitle}', async () => {
+    const { svc, creates } = makeService();
+    const result = await svc.applyFlow(FLOWS, {
+      parentId: 100,
+      noTemplate: true,
+      name: 'Arquivos privados',
+      titles: { pub: 'Deploy {title} em 2 repositórios [PROD]' },
+    }, TEMPLATES);
+    expect(creates.map(c => c.ops.find(o => o.path === '/fields/System.Title')?.value)).toEqual([
+      'Testes: Arquivos privados',
+      'Deploy Arquivos privados em 2 repositórios [PROD]',
+    ]);
+    expect(result.name).toBe('Arquivos privados');
+  });
+
+  it('warns about a title given for a card that is not being created', async () => {
+    const { svc, creates } = makeService();
+    const result = await svc.applyFlow(FLOWS, { parentId: 100, noTemplate: true, skip: ['tests'], titles: { tests: 'Testes da feature' } }, TEMPLATES);
+    expect(creates).toHaveLength(1);
+    expect(result.warnings).toEqual(['--titles not applied to cards that are not being created: tests']);
+  });
+
   it('creates without descriptions when asked with noTemplate', async () => {
     const { svc, creates } = makeService();
     await svc.applyFlow(FLOWS, { parentId: 100, noTemplate: true }, TEMPLATES);

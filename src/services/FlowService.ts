@@ -174,7 +174,9 @@ export class FlowService extends WorkItemService {
     const story = await this.story(params.parentId);
     const [name, flow] = pickFlow(file, String(story.WorkItemType), params.flow);
     const children = (await this.childrenOf([params.parentId])).get(params.parentId) ?? [];
-    const ctx = { title: String(story.Title), id: params.parentId };
+    const storyTitle = String(story.Title);
+    // A feature often spans repositories under a story whose title is not the feature's name.
+    const ctx = { title: params.name?.trim() || storyTitle, id: params.parentId };
     const plan = planFlow(flow, children, ctx, params);
     const descriptions = params.descriptions ?? {};
 
@@ -206,7 +208,7 @@ export class FlowService extends WorkItemService {
       const invalid = toCreate.flatMap(p => {
         const model = modelFor(p.card);
         if (!model) return [];
-        const filled = fillTemplate(model.content, { title: p.title, parentId: params.parentId, parentTitle: ctx.title });
+        const filled = fillTemplate(model.content, { title: p.title, parentId: params.parentId, parentTitle: storyTitle });
         const { error } = checkDescription(descriptions[p.card.key], filled, model.name);
         return error ? [`${p.card.key}: ${error}`] : [];
       });
@@ -215,7 +217,11 @@ export class FlowService extends WorkItemService {
 
     const results: WorkItemRow[] = [];
     const created: string[] = [];
-    const warnings: string[] = [];
+    // A title given for a card that is not being created is not applied — say so rather than drop it.
+    const unusedTitles = Object.keys(params.titles ?? {}).filter(key => !toCreate.some(p => p.card.key === key));
+    const warnings: string[] = unusedTitles.length
+      ? [`--titles not applied to cards that are not being created: ${unusedTitles.join(', ')}`]
+      : [];
     const conflicts = plan.filter(p => p.action === 'conflict').map(p => `${p.card.key}: ${p.reason}`);
     // Same columns on every row, so the plan prints as one table.
     const row = (key: string, action: string, fields: { ids?: string; type: string; title: string; assignedTo?: unknown; state?: unknown; iterationPath?: unknown; template?: string; description?: string }) => ({
@@ -308,6 +314,7 @@ export class FlowService extends WorkItemService {
     return {
       story: brief(story),
       flow: name,
+      ...(ctx.title !== storyTitle ? { name: ctx.title } : {}),
       dryRun: params.dryRun || undefined,
       cards: results,
       ...(conflicts.length ? { conflicts } : {}),

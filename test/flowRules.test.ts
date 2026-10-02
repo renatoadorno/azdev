@@ -4,6 +4,8 @@ import {
   applicableFlows,
   closedAt,
   evaluateFlow,
+  expectedCarryoverCards,
+  fitsAnyCard,
   matchCards,
   pickFlow,
   planFlow,
@@ -95,6 +97,27 @@ describe('validateFlows', () => {
   it('rejects a card whose own title fails its match, which would make apply create it forever', () => {
     const flows = { flows: { s: { cards: [{ key: 'pub', type: 'Publication', title: '{title}', match: '\\[PROD\\]' }] } } };
     expect(() => validateFlows(flows)).toThrow('does not match its own "match"');
+  });
+
+  it('checks the carry-over settings', () => {
+    const ok = { backlogSprints: ['Sprint 100'], flows: { s: { cards: [{ key: 'pub', type: 'Publication', title: '{title} [PROD]', expectedCarryover: true }] } } };
+    expect(validateFlows(ok)).toBe(ok as any);
+    expect(() => validateFlows({ ...ok, backlogSprints: 'Sprint 100' })).toThrow('"backlogSprints" must be a list of sprint names or paths');
+    expect(() => validateFlows({ flows: { s: { cards: [{ key: 'pub', type: 'Publication', title: 'P', expectedCarryover: 'yes' }] } } }))
+      .toThrow('"expectedCarryover" must be true or false');
+  });
+});
+
+describe('carry-over cards', () => {
+  it('collects the cards whose sprint moves are expected and matches items against them', () => {
+    const cards = expectedCarryoverCards({ flows: { s: { cards: [
+      { key: 'impl', type: 'Task', title: 'Impl {title}' },
+      { key: 'pub', type: 'Publication', title: '{title} [PROD]', match: '\\[\\s*PROD\\s*\\]', expectedCarryover: true },
+    ] } } });
+    expect(cards.map(c => c.key)).toEqual(['pub']);
+    expect(fitsAnyCard(cards, row(1, 'Publication', 'Deploy [ PROD]'))).toBe(true);
+    expect(fitsAnyCard(cards, row(2, 'Publication', 'Deploy [HOMOLOG]'))).toBe(false);
+    expect(expectedCarryoverCards(null)).toEqual([]);
   });
 });
 
@@ -300,5 +323,24 @@ describe('planFlow', () => {
 
   it('rejects an unknown card key before anything is created', () => {
     expect(() => planFlow(STORY, children, CTX, { skip: ['qa'] })).toThrow('Unknown card key(s): qa');
+  });
+
+  describe('titles', () => {
+    it('gives a card its whole title by key, placeholders included', () => {
+      const plan = planFlow(STORY, children, CTX, { titles: { 'pub-prod': 'Publicar API + app #{id} [PROD]' } });
+      expect(plan.find(p => p.card.key === 'pub-prod')).toMatchObject({ action: 'create', title: 'Publicar API + app #13298 [PROD]' });
+      expect(plan.find(p => p.card.key === 'tests')!.title).toBe('Testes técnicos: Carrinho');
+    });
+
+    it('still refuses a title that would not count as the card on the next run', () => {
+      const prod = planFlow(STORY, children, CTX, { titles: { 'pub-prod': 'Publicar API' } }).find(p => p.card.key === 'pub-prod')!;
+      expect(prod.action).toBe('conflict');
+      expect(prod.reason).toContain(`does not match the card's own "match"`);
+    });
+
+    it('rejects a title for an unknown key or an empty one', () => {
+      expect(() => planFlow(STORY, children, CTX, { titles: { qa: 'Testes' } })).toThrow('Unknown card key(s): qa');
+      expect(() => planFlow(STORY, children, CTX, { titles: { tests: '  ' } })).toThrow('Empty title for card(s): tests');
+    });
   });
 });

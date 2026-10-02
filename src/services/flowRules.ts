@@ -56,7 +56,20 @@ function validateCardShape(card: FlowCard, index: number, flowName: string): str
   if (card.template !== undefined && (typeof card.template !== 'string' || !card.template.trim())) {
     problems.push(`${where}: "template" must be the name of a file in templates/`);
   }
+  if (card.expectedCarryover !== undefined && typeof card.expectedCarryover !== 'boolean') {
+    problems.push(`${where}: "expectedCarryover" must be true or false`);
+  }
   return problems;
+}
+
+/** Cards of every flow whose sprint moves are part of the process (`expectedCarryover`). */
+export function expectedCarryoverCards(file: FlowsFile | null): FlowCard[] {
+  return file ? Object.values(file.flows).flatMap(flow => flow.cards.filter(card => card.expectedCarryover)) : [];
+}
+
+/** Whether an item counts as one of these cards (same type, title matching the card's `match`). */
+export function fitsAnyCard(cards: FlowCard[], row: Row): boolean {
+  return cards.some(card => cardFits(card, row.WorkItemType, row.Title));
 }
 
 /** Card that a child of `card`'s type titled `title` would count as, when it is not `card` itself. */
@@ -89,6 +102,9 @@ export function validateFlows(raw: unknown): FlowsFile {
   }
   if (file.operationalTypes !== undefined && !Array.isArray(file.operationalTypes)) {
     problems.push('"operationalTypes" must be a list of work item types');
+  }
+  if (file.backlogSprints !== undefined && (!Array.isArray(file.backlogSprints) || file.backlogSprints.some(s => typeof s !== 'string' || !s.trim()))) {
+    problems.push('"backlogSprints" must be a list of sprint names or paths');
   }
 
   for (const [name, flow] of Object.entries(file.flows)) {
@@ -295,6 +311,8 @@ export interface PlanFilter {
   skip?: string[];
   /** Optional cards to create too — they are left out by default. */
   with?: string[];
+  /** Whole title of a card to create, by key, instead of its `title` (takes `{title}`/`{id}` too). */
+  titles?: Record<string, string>;
 }
 
 /**
@@ -303,15 +321,18 @@ export interface PlanFilter {
  */
 export function planFlow(flow: FlowDefinition, children: Row[], ctx: TemplateContext, filter: PlanFilter = {}): PlannedCard[] {
   const known = new Set(flow.cards.map(c => c.key));
-  const unknown = [...(filter.only ?? []), ...(filter.skip ?? []), ...(filter.with ?? [])].filter(k => !known.has(k));
+  const titles = filter.titles ?? {};
+  const unknown = [...(filter.only ?? []), ...(filter.skip ?? []), ...(filter.with ?? []), ...Object.keys(titles)].filter(k => !known.has(k));
   if (unknown.length) throw new Error(`Unknown card key(s): ${unknown.join(', ')}. Cards: ${[...known].join(', ')}`);
+  const blank = Object.entries(titles).filter(([, title]) => typeof title !== 'string' || !title.trim()).map(([key]) => key);
+  if (blank.length) throw new Error(`Empty title for card(s): ${blank.join(', ')}`);
 
   const { matches } = matchCards(flow.cards, children);
   return matches.map(({ card, items }) => {
     if (items.length) {
       return { card, action: 'exists', title: items.map(i => String(i.Title)).join(' | '), ids: items.map(i => i.id).join(',') };
     }
-    const title = renderTemplate(card.title, ctx);
+    const title = renderTemplate(titles[card.key] ?? card.title, ctx).trim();
 
     const wanted = filter.only
       ? filter.only.includes(card.key)

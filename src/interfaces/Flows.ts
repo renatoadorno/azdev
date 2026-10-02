@@ -24,6 +24,11 @@ export interface FlowCard {
   requireDescription?: boolean;
   /** Types whose closing after this card makes it stale (e.g. a fix landing after the tests). */
   retestAfter?: string[];
+  /**
+   * Moving sprints is how this card works (a production publication waits for the
+   * deploy window): `sprint carryover` lists it apart instead of counting it.
+   */
+  expectedCarryover?: boolean;
 }
 
 export interface FlowDefinition {
@@ -34,8 +39,10 @@ export interface FlowDefinition {
 }
 
 export interface FlowsFile {
-  /** Types `sprint summary` keeps apart from product work (support, meetings, hot fixes). */
+  /** Types `sprint summary` keeps apart from product work (support, meetings, hot fixes); `--product` leaves them out of the stats. */
   operationalTypes?: string[];
+  /** Sprints used as a waiting list (name or path): moving an item there or out of it is not carry-over, and `stats aging` leaves their items out. */
+  backlogSprints?: string[];
   flows: Record<string, FlowDefinition>;
 }
 
@@ -64,6 +71,10 @@ export interface ApplyFlowParams {
   with?: string[];
   /** Sprint for every created card, overriding the cards' own and the parent's. */
   sprint?: string;
+  /** Feature name used for `{title}` in the cards' titles and inline descriptions, instead of the story's title. */
+  name?: string;
+  /** Whole title of a card to create, by key — must still match the card's `match`. */
+  titles?: Record<string, string>;
   dryRun?: boolean;
   /** Description written for each card to create, by card key — required for cards that have a template. */
   descriptions?: Record<string, string>;
