@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+A free query, progress and delivery numbers, and card titles of a flow set per
+feature.
+
+### Added
+
+- `workitem query`: filter flags (`--type`/`--state` lists, `--sprint`, `--area`,
+  `--tags`, `--text`, `--parent`, `--unassigned`, `--createdSince`/`--changedSince`/
+  `--closedSince` with `7d`, `2w`, `3m` or a date), a free `--where` condition with
+  short field names (`[priority] = 1`), a whole `--wiql` query, `--fields`,
+  `--orderBy`, `--count`, `--groupBy` and `--printWiql`.
+- `metadata fields [--search]`: the project's fields with their reference names.
+- `sprint progress`: to do / doing / done by state category, % done against time
+  elapsed (`pace`), by state, type and assignee, effort when estimated; `--daily`
+  adds a burn-up.
+- `sprint carryover`: items still unfinished at the end of earlier sprints (read
+  with WIQL ASOF), and where a finished sprint's unfinished items went.
+- `workitem progress <storyId>`: a story's whole subtree by type and assignee, the
+  sprints it spans and what is still open, for how long.
+- `stats throughput` (per sprint, as of its end, or per week), `stats cycle-time`
+  (lead and cycle time: average, median, p85, with `boardHabits` and a `caveat` when
+  cards were created or moved to in progress right before closing) and `stats aging`
+  (open items by time in their state, left-behind items in finished sprints flagged).
+- Every stats command takes `--mine`, `--assignedTo`, `--type` and `--product`
+  (leaves out flows.json `operationalTypes`).
+- flows.json `backlogSprints` (waiting-list sprints) and card `expectedCarryover`
+  (a card that changes sprints by design) keep process moves out of carry-over.
+- `flow apply --name <feature>` fills `{title}` in the cards' titles with the
+  feature's name; `--titles '{"<key>":"<title>"}'` sets whole titles per card.
+
 ## [0.5.3] - 2026-10-02
 
 Description templates per work item type, used as models: a card carries its

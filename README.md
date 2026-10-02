@@ -72,12 +72,13 @@ Override the default project for any command with `--project <name>`.
 
 | Group | Subcommands | Description |
 |---|---|---|
-| `workitem` | 17 | List, search, create (with parent/tags/sprint), update, comment, link; one-call `view`, comments, attachments, history timeline |
-| `sprint` | 5 | List sprints, current sprint, hydrated items, per-person summary by story, capacity |
+| `workitem` | 20 | Free `query` (filters, `--where`, WIQL, counts, groups), search, create (with parent/tags/sprint), update, comment, link; one-call `view`, comments, attachments, history timeline, story `progress`, description templates |
+| `sprint` | 7 | List sprints, current sprint, hydrated items, per-person summary by story, `progress` (pace, burn-up), `carryover` between sprints, capacity |
 | `board` | 5 | List boards, columns, cards; move cards between columns; team members |
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |
-| `metadata` | 2 | Work item types (with states) and tags of the current project |
+| `metadata` | 3 | Work item types (with states), fields and tags of the current project |
 | `flow` | 3 | Story cycles from `flows.json`: create a story's standard cards, audit a story or a sprint |
+| `stats` | 3 | Throughput per sprint or week, lead and cycle time, aging of open items |
 | `config` | 5 | Show, get, set and unset CLI configuration; locate config, flows and conventions files |
 
 Full command reference: [docs/commands.md](./docs/commands.md)

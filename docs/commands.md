@@ -52,6 +52,62 @@ azdev workitem list
 azdev workitem list --query "SELECT [System.Id], [System.Title] FROM WorkItems WHERE [System.State] = 'Active'"
 ```
 
+Prefer `workitem query`, which builds the WIQL from flags and also counts and groups.
+
+---
+
+### `workitem query`
+
+A free query. Filter flags build the WIQL; `--where` adds any condition; `--wiql` runs a whole query as given. Returns rows, a count or counts grouped by fields.
+
+```
+azdev workitem query [filters] [--where <wiql>] [--fields <csv>] [--orderBy <order>] [--top N] [--count | --groupBy <csv>] [--printWiql]
+azdev workitem query --wiql "<query>" | --wiqlFile <file> [--fields <csv>] [--top N] [--count | --groupBy <csv>]
+```
+
+Filters, combined with AND:
+
+- `--type`, `--state`: one value or several, comma-separated. `--open` leaves out finished states.
+- `--mine`, `--assignedTo <user>`, `--unassigned`.
+- `--sprint <sprint>`, `--area <path>` (subareas included), `--parent <id>`.
+- `--tags a,b`: items carrying every tag. `--text <t>`: in the title or the description.
+- `--createdSince`, `--changedSince`, `--closedSince`: `7d`, `2w`, `3m`, `1y`, `today`, `yesterday` or `YYYY-MM-DD`.
+- `--where "<condition>"`: extra WIQL, where a field in brackets may go by a short name (`[priority] = 1`, `[Remaining Work] > 4`); quoted text is left alone.
+
+Output:
+
+- Rows by default (id, type, state, title, assignee, parent). `--fields` returns exactly those columns, in that order. `--orderBy` defaults to `changed desc`. `--top` defaults to 100 (`0` = no limit), with a warning when reached.
+- `--count` → `{ count }`. `--groupBy state,assignedTo` → `{ total, groups[] }` with a `count` per combination.
+- `--printWiql` → `{ wiql }` without running it.
+
+Field names take aliases (`title`, `assignedTo`, `sprint`, `closed`, `priority`, `effort`, `remaining`…), reference names, display names and the last segment of custom fields. An unknown name fails with suggestions; `azdev metadata fields` lists them.
+
+**Examples:**
+
+```bash
+azdev workitem query --mine --open --changedSince 14d
+azdev workitem query --sprint 82 --groupBy state,assignedTo
+azdev workitem query --type Publication --closedSince 30d --where "[title] CONTAINS '[PROD]'" --count
+azdev workitem query --type Task --sprint current --fields id,title,remaining --orderBy "remaining desc"
+azdev workitem query --sprint 82 --mine --printWiql
+```
+
+---
+
+### `workitem progress`
+
+How far a story is, over its whole subtree. Buckets (to do, doing, done) follow each type's state categories, so custom states (`staging`, `Committed`) land where the process puts them; removed items are counted apart.
+
+```
+azdev workitem progress <storyId>
+```
+
+Output: `story` (state, sprint, `ageDays`, `leadTimeDays` once done, `firstActivity`, `lastDelivery`), `totals`, `effort` when items carry estimates, the `sprints` the children span, `byType`, `byAssignee`, and `open[]` with how long each item has been waiting (`daysInState`).
+
+```bash
+azdev workitem progress 1200
+```
+
 ---
 
 ### `workitem get`
@@ -617,6 +673,46 @@ azdev sprint summary current --assignedTo alice@example.com --operational "Suppo
 
 ---
 
+### `sprint progress`
+
+How far a sprint is: items to do, doing and done (by state category), % done against the share of working days elapsed (`pace`: ahead, on track or behind), by state, by type and by assignee, and effort when the items carry estimates.
+
+```
+azdev sprint progress [sprint] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--daily] [--teamId <id>]
+```
+
+- `sprint` defaults to `current`. `daysElapsed` does not count today, which is still under way.
+- `--daily` adds the items and done items at the end of each working day so far: a burn-up that also shows work added mid-sprint (two queries per day).
+- `--product` leaves out the `operationalTypes` of flows.json.
+
+```bash
+azdev sprint progress
+azdev sprint progress 82 --mine --daily
+```
+
+---
+
+### `sprint carryover`
+
+Work pushed from sprint to sprint. An item counts as carried once for every earlier sprint it was still unfinished in at that sprint's end, read as the board was then (ASOF queries). For a finished sprint, it also tells where each unfinished item went.
+
+```
+azdev sprint carryover [sprint] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--open] [--lookback N] [--teamId <id>]
+```
+
+- `--lookback N`: earlier sprints to check (default 6). `--open`: only items not finished yet.
+- Sprints listed in flows.json `backlogSprints` are waiting lists, never counted as a sprint an item was carried from.
+- Items fitting a card with `expectedCarryover: true` (a production publication waiting for its deploy window) are listed under `expected`, out of the count.
+- `carriedOut` (finished sprints only) sorts the unfinished items into `moved`, `parked` (now in a backlog sprint), `expected`, `closed late`, `still open` and `removed`.
+- Earlier sprints are the team's sprints that started before this one and ended by its first day; overlapping sprints are not earlier.
+
+```bash
+azdev sprint carryover --mine
+azdev sprint carryover 81 --lookback 10
+```
+
+---
+
 ### `sprint capacity`
 
 Get capacity for a sprint. Returns per-member activities (`name`, `capacityPerDay`) and days off, plus team totals (`totalCapacityPerDay`, `totalDaysOff`).
@@ -994,6 +1090,22 @@ azdev metadata types --markdown
 
 ---
 
+### `metadata fields`
+
+List the project's fields (`referenceName`, `name`, `type`) — the names `workitem query` takes in `--fields`, `--groupBy`, `--orderBy` and `--where`.
+
+```
+azdev metadata fields [--search <text>] [--raw]
+```
+
+- `--search`: only fields whose name or reference name contains the text. `--raw`: the full field objects.
+
+```bash
+azdev metadata fields --search date
+```
+
+---
+
 ### `metadata tags`
 
 List the tags defined in the project. Slim by default: names only.
@@ -1023,6 +1135,7 @@ Flows live in `flows.json`, next to `config.json` (`~/.config/azdev/flows.json`;
 ```json
 {
   "operationalTypes": ["Support", "meetings", "hot fix"],
+  "backlogSprints": ["Sprint 100"],
   "flows": {
     "story": {
       "description": "Story with code",
@@ -1036,7 +1149,7 @@ Flows live in `flows.json`, next to `config.json` (`~/.config/azdev/flows.json`;
         },
         { "key": "review", "type": "Review", "title": "Code review: {title}", "assignedTo": "reviewer@example.com" },
         { "key": "pub-hml", "type": "Publication", "title": "{title} [HOMOLOG]", "match": "\\[\\s*HOMOLOG\\s*\\]", "optional": true },
-        { "key": "pub-prod", "type": "Publication", "title": "{title} [PROD]", "match": "\\[\\s*PROD\\s*\\]" }
+        { "key": "pub-prod", "type": "Publication", "title": "{title} [PROD]", "match": "\\[\\s*PROD\\s*\\]", "expectedCarryover": true }
       ]
     }
   }
@@ -1052,8 +1165,9 @@ Card fields:
 - **`optional`**: `status` does not flag it as missing, and `apply` only creates it with `--with <key>`.
 - **`requireDescription`**: `status` flags the card when its description is empty or still the untouched template.
 - **`retestAfter`**: types whose closing *after* this card makes it stale — a fix landing after the technical tests. A comment on the card, or another card of the same key, closed after the fix clears it.
+- **`expectedCarryover`**: the card changes sprints by design (a production publication waiting for its deploy window), so `sprint carryover` lists it apart instead of counting it as work pushed forward.
 
-`operationalTypes` feeds `sprint summary`. `parentTypes` lets `status`/`apply` pick the flow from the story's type; otherwise pass `--flow <name>`.
+`operationalTypes` feeds `sprint summary` and the `--product` flag of the stats commands. `backlogSprints` names the sprints used as a waiting list: `sprint carryover` never counts them as a sprint an item was carried from, `stats throughput` leaves them out and `stats aging` leaves their items out unless `--includeParked`. `parentTypes` lets `status`/`apply` pick the flow from the story's type; otherwise pass `--flow <name>`.
 
 Children in state `Removed` count as absent.
 
@@ -1103,7 +1217,7 @@ azdev flow status --sprint current --mine
 Create, as children of the story, the cards of its flow that it does not have yet. **Idempotent**: a card that already exists (same type, title matching `match`) is reported as `exists` and never created twice, so re-running after a failure only creates what is still missing. Optional cards are created only when asked.
 
 ```
-azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <s>] [--descriptions <dir>] [--noTemplate] [--dryRun]
+azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <s>] [--name <feature>] [--titles <json>] [--descriptions <dir>] [--noTemplate] [--dryRun]
 ```
 
 | Argument/Option | Type | Description |
@@ -1114,6 +1228,8 @@ azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--wi
 | `--skip` | csv | Every card except these keys |
 | `--with` | csv | Optional card keys to create too |
 | `--sprint` | string | Sprint for every created card, over the card's own `sprint` and the story's |
+| `--name` | string | Feature name for `{title}` in the cards' titles, instead of the story's title (`{parentTitle}` in templates stays the story's) |
+| `--titles` | json | Whole titles by card key, e.g. `{"pub-prod":"Deploy API + app [PROD]"}`. Each must still match its card's `match`, or the row is a `conflict` |
 | `--descriptions` | path | Directory with one `<key>.md` per card to create — the card's own description, written from its template |
 | `--noTemplate` | boolean | Create without descriptions, skipping the template requirement |
 | `--dryRun` | boolean | Show the plan (`exists`, `would-create`, `skipped`) with resolved assignee and sprint, the `template` each card follows and whether its `description` is there, without creating |
@@ -1130,6 +1246,66 @@ A card whose title, rendered with the story's real title, would count as another
 azdev flow apply 1300 --dryRun
 azdev flow apply 1300
 azdev flow apply 1300 --with pub-hml --skip qa --sprint 100
+azdev flow apply 1300 --name "Private files bucket" --titles '{"pub-prod":"Deploy API + portal [PROD]"}' --dryRun
+```
+
+---
+
+## stats
+
+Delivery numbers over time. Every stats command takes `--mine`, `--assignedTo <user>`, `--type <csv>`, `--product` (leaves out the `operationalTypes` of flows.json) and `--teamId <id>` (whose sprints). Done means the Completed state category of each type; removed items never count. Sprint progress and carry-over live under `sprint`, a story's progress under `workitem progress`.
+
+### `stats throughput`
+
+Delivered items per sprint or per week, with average and median over the finished periods.
+
+```
+azdev stats throughput [--by sprint|week] [--last N] [filters]
+```
+
+- `--by sprint` (default): the team's last `N` started sprints (default 6), each with `planned` and `done` as they stood at its end, `donePct`, `notDone` and `current` for a sprint still running. Backlog sprints are left out.
+- `--by week`: items closed per ISO week.
+
+```bash
+azdev stats throughput --mine
+azdev stats throughput --by week --last 8 --product
+```
+
+---
+
+### `stats cycle-time`
+
+How long delivered items took: lead time (created → closed) and cycle time (activated → closed), as `avg`, `median`, `p85` and `max` in days, by type or by assignee, with the five slowest items.
+
+Both measure the cards, so `boardHabits` says how far they measure the work: items created less than an hour before closing (`createdNearClose`), items that entered an in-progress state less than an hour before closing (`activatedNearClose`) and items never activated (`neverActivated`). When those shares are high, a `caveat` says so: on a board where cards move to in progress right before closing, cycle time comes out near zero whatever the work took, and lead time is the steadier measure.
+
+```
+azdev stats cycle-time [--since <date> | --sprint <sprint>] [--by type|assignedTo|none] [filters]
+```
+
+- `--since` defaults to `90d`; `--sprint` takes the done items of a sprint instead.
+
+```bash
+azdev stats cycle-time --mine
+azdev stats cycle-time --sprint 81 --by assignedTo --product
+```
+
+---
+
+### `stats aging`
+
+Open items by how long they have sat in their current state, oldest first, with a distribution (`0-7` … `91+` days). `inFinishedSprints` counts open items left behind in a sprint already over (`sprintOver` on each row).
+
+```
+azdev stats aging [--sprint <sprint>] [--state <csv>] [--inProgress] [--minDays N] [--top N] [--includeParked] [filters]
+```
+
+- `--inProgress`: only items already started — what is stuck, not what waits to start.
+- Items of flows.json `backlogSprints` are left out (`parkedLeftOut`) unless `--includeParked`.
+
+```bash
+azdev stats aging --mine --top 10
+azdev stats aging --inProgress --minDays 14
 ```
 
 ---

@@ -40,7 +40,7 @@ This repo exposes Azure DevOps **task and project management** capabilities via 
 
 - **CLI** (`dist/azdev-*`) — uses `citty`, outputs toon-format by default (token-efficient), with `--json` and `--markdown` flags
 
-**Active modules:** WorkItems, BoardsSprints, Projects, Metadata, Flows.
+**Active modules:** WorkItems, BoardsSprints, Projects, Metadata, Flows, Stats.
 
 ### Layer structure
 
@@ -49,16 +49,21 @@ src/
   interfaces/       — TypeScript types shared across layers
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
     Flows.ts        — flows.json schema (FlowsFile/FlowDefinition/FlowCard) and flow params
+    Stats.ts        — stats params (StatsFilters, CarryoverRules from flows.json)
     *.ts            — Domain-specific param interfaces per command group
   services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
     AzureDevOpsService.ts  — Base class: connection/auth, plus what every service shares:
                              resolveIteration (--sprint), currentUser/resolveAssignee (@me),
-                             hydrate (batch getWorkItems), queryIds (WIQL → ids), webUrl
+                             hydrate (batch getWorkItems), queryIds (WIQL → ids), webUrl,
+                             resolveFieldNames (aliases; getFields only for unknown names)
     EntraAuthHandler.ts    — Singleton IRequestHandler using DefaultAzureCredential (Entra/OIDC)
     WorkItemService.ts     — CRUD + queries; buildCreateRequest (parent/tags/sprint in one
-                             request, also used by --dryRun), markdown comments, state hints
+                             request, also used by --dryRun), markdown comments, state hints,
+                             buildQuery/queryWorkItems (`workitem query`)
     WorkItemViewService.ts — view (one-call context) and attachments (list/download)
     FlowService.ts         — flow status/apply over FlowsFile
+    StatsService.ts        — sprint progress/carryover, story progress, throughput,
+                             cycle time, aging; past board states through WIQL ASOF
     *Service.ts     — Other domain services extending AzureDevOpsService
     Pure modules (no network, unit-tested):
     workItemUtils.ts — slimWorkItem, WIQL filters/escape, tags, patch ops, constants
@@ -69,6 +74,10 @@ src/
     history.ts       — revisions → field-change timeline
     descriptionTemplates.ts — template fill + checkDescription (a template is a model:
                               missing, untouched or leftover <…> prompts are refused)
+    fieldNames.ts    — field aliases and name → reference name resolution
+    queryBuilder.ts  — query flags → WIQL, relative dates (7d/2w), [short] names in --where
+    stats.ts         — state buckets from state categories, totals, working days, pace,
+                       percentiles, weeks, aging, carry-over
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
@@ -85,13 +94,15 @@ src/
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
     warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
+    statsArgs.ts    — filter flags every stats command shares (--mine/--assignedTo/--type/--product)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 18 subcommands
-      sprint.ts     — 5 subcommands
+      workitem.ts   — 20 subcommands
+      sprint.ts     — 7 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
-      metadata.ts   — 2 subcommands (types, tags)
+      metadata.ts   — 3 subcommands (types, fields, tags)
       flow.ts       — list / status / apply
+      stats.ts      — throughput / cycle-time / aging
       config.ts     — show / set / get / unset / paths
     formatters/
       index.ts      — format(data, flags) selector
