@@ -7,7 +7,10 @@ import { WorkItemViewService } from '../../services/WorkItemViewService';
 import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../../services/history';
 import { attachmentFileName } from '../../services/richText';
 import { slimWorkItem } from '../../services/workItemUtils';
-import { globalOptions, runService } from '../command';
+import { globalOptions, runCommand, runService } from '../command';
+import { format } from '../formatters/index';
+import { chooseTemplate, loadTemplates, requireTemplate } from '../templates';
+import { fillTemplate, headings, needsParentTitle } from '../../services/descriptionTemplates';
 import {
   failUsage,
   parseCount,
@@ -116,6 +119,39 @@ const attachments = defineCommand({
   },
 });
 
+const template = defineCommand({
+  meta: {
+    name: 'template',
+    description: "Show a description template — the model to write a card's own description from; without a name, list them",
+  },
+  args: {
+    ...globalOptions,
+    name: { type: 'positional', description: 'Template name (a work item type, e.g. Publication)', required: false },
+    title: { type: 'string', description: 'Fill {title} with the title of the card being written' },
+    parent: { type: 'string', description: 'Fill {parentId} and {parentTitle} from this parent work item' },
+  },
+  async run({ args }) {
+    const templates = loadTemplates();
+    if (!args.name) {
+      await runCommand(async () => {
+        console.log(format(templates.map(t => ({ name: t.name, sections: headings(t.content).join(' | ') })), args));
+      });
+      return;
+    }
+
+    const chosen = requireTemplate(templates, args.name);
+    const parentId = parseOptionalId(args.parent, 'parent work item ID');
+    if (parentId && needsParentTitle(chosen.content)) {
+      await runService(WorkItemService, args, async (svc) => {
+        const parent = await svc.getWorkItemById({ id: parentId, fields: ['System.Title'] });
+        return fillTemplate(chosen.content, { title: args.title, parentId, parentTitle: parent.fields?.['System.Title'] }, true);
+      }, { plainText: true });
+      return;
+    }
+    console.log(fillTemplate(chosen.content, { title: args.title, parentId }, true));
+  },
+});
+
 const children = defineCommand({
   meta: { name: 'children', description: 'List children of a work item' },
   args: {
@@ -216,6 +252,8 @@ const create = defineCommand({
     sprint: sprintArg,
     description: { type: 'string', description: 'Description' },
     descriptionFile: { type: 'string', description: "Read the description from a file ('-' = stdin)" },
+    template: { type: 'string', description: 'Template the description is written from (default: templates/<type>.md, if it exists); the description is required and checked against it' },
+    noTemplate: { type: 'boolean', description: 'Skip the template check (allows creating without a description)' },
     assignedTo: { type: 'string', description: "Assign to user (e-mail or name; '@me' = you)" },
     state: { type: 'string', description: 'Initial state' },
     areaPath: { type: 'string', description: 'Area path' },
@@ -229,11 +267,13 @@ const create = defineCommand({
     const parentId = parseOptionalId(args.parent, 'parent work item ID');
     const description = textOrFile(args.description, args.descriptionFile, ['description', 'descriptionFile']);
     if (args.sprint && args.iterationPath) failUsage('Pass --sprint or --iterationPath, not both');
+    const template = chooseTemplate(loadTemplates(), args.type!, { template: args.template, noTemplate: args.noTemplate });
 
     const params = {
       workItemType: args.type!,
       title: args.title!,
       description,
+      descriptionModel: template,
       assignedTo: args.assignedTo,
       state: args.state,
       areaPath: args.areaPath,
@@ -243,14 +283,16 @@ const create = defineCommand({
       tags: args.tags,
       format: richTextFormat,
     };
+    const used = template ? { template: template.name } : {};
     await runService(WorkItemService, args, async (svc) => {
       if (args.dryRun) {
         const request = await svc.buildCreateRequest(params);
         const operations = request.operations.map(op => ({ ...op, op: Operation[op.op].toLowerCase() }));
-        return { dryRun: true, workItemType: request.workItemType, operations };
+        const warnings = request.warnings.length ? { warnings: request.warnings } : {};
+        return { dryRun: true, ...used, ...warnings, workItemType: request.workItemType, operations };
       }
       const created = await svc.createWorkItem(params);
-      return args.raw ? created : svc.summarize(created);
+      return args.raw ? created : { ...svc.summarize(created), ...used };
     });
   },
 });
@@ -382,8 +424,17 @@ const bulkCreate = defineCommand({
     }
     if (!Array.isArray(items)) failUsage('--items must be a JSON array');
 
+    // Creates are checked against their type's template, like `create`.
+    const templates = loadTemplates();
+    const workItems = (items as any[]).map(item => {
+      if ('id' in item) return item;
+      const { template: name, noTemplate, ...rest } = item;
+      const template = chooseTemplate(templates, String(item.workItemType ?? ''), { template: name, noTemplate });
+      return template ? { ...rest, descriptionModel: template } : rest;
+    });
+
     await runService(WorkItemService, args, async (svc) => {
-      const results = await svc.bulkUpdateWorkItems({ workItems: items as any[] });
+      const results = await svc.bulkUpdateWorkItems({ workItems });
       return args.raw ? { count: results.length, workItems: results } : results.map(wi => svc.summarize(wi));
     });
   },
@@ -397,6 +448,7 @@ export default defineCommand({
     view,
     comments,
     attachments,
+    template,
     children,
     history,
     search,

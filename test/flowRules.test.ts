@@ -8,6 +8,7 @@ import {
   pickFlow,
   planFlow,
   renderTemplate,
+  startingDescription,
   validateFlows,
 } from '../src/services/flowRules';
 
@@ -195,6 +196,22 @@ describe('evaluateFlow', () => {
   it('flags a tests card still holding the untouched template apply created it with', () => {
     const children = complete.map(r => (r.id === 11 ? { ...r, Description: '## O que foi testado\n\n## Resultado' } : r));
     expect(evaluateFlow(STORY, children, new Map(), CTX).findings).toHaveLength(1);
+  });
+
+  it('recognizes an untouched template file, filled with the card title and the story', () => {
+    const flow: FlowDefinition = { cards: [{ key: 'tests', type: 'technical tests', title: 'T', requireDescription: true }] };
+    const templates = [{ name: 'technical tests', content: '# Testes: {title} (#{parentId})\n\n## Resultado\n' }];
+    const untouched = [row(11, 'technical tests', 'Testes do carrinho', 'Done', { Description: '# Testes: Testes do carrinho (#13298)\n## Resultado' })];
+    const written = [row(11, 'technical tests', 'Testes do carrinho', 'Done', { Description: '# Testes: Testes do carrinho (#13298)\n## Resultado\nverde' })];
+    expect(evaluateFlow(flow, untouched, new Map(), CTX, templates).findings).toHaveLength(1);
+    expect(evaluateFlow(flow, written, new Map(), CTX, templates).findings).toEqual([]);
+  });
+
+  it('prefers the card inline description over its template file as the model', () => {
+    const card = { key: 'tests', type: 'technical tests', title: 'T', description: '## Inline {title}' };
+    const templates = [{ name: 'technical tests', content: '## Arquivo' }];
+    expect(startingDescription(card, row(1, 'technical tests', 'X'), CTX, templates)).toBe('## Inline Carrinho');
+    expect(startingDescription({ ...card, description: undefined, template: 'technical tests' }, row(1, 'technical tests', 'X'), CTX, templates)).toBe('## Arquivo');
   });
 
   it('recognizes an untouched template with <placeholders>, which storage keeps entity-encoded', () => {

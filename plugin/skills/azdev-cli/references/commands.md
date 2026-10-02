@@ -53,6 +53,13 @@ Output: main fields (type, state, title, assignee, sprint, area, tags, priority,
 - `--maxText N` truncate long values (default 240; `0` = no limit).
 - `--raw` the raw revisions (one full snapshot each).
 
+### workitem template
+
+`azdev workitem template [name] [--title <t>] [--parent <id>]` — description templates from the user's `templates/` directory (`azdev config paths`). A template is the **model** to write a card's description from — never the description itself.
+
+- No `name`: lists the templates with their `sections` (headings).
+- `name`: prints the template as raw Markdown. `--title` fills `{title}`; `--parent <id>` fills `{parentId}` and `{parentTitle}` (reads the parent). Placeholders not given stay visible.
+
 ### workitem children
 
 `azdev workitem children <id> [--recursive] [--mine] [--open] [--state <s>] [--type <t>]` — hydrated rows: id, type, state, title, assignee, parent.
@@ -88,8 +95,9 @@ Output: main fields (type, state, title, assignee, sprint, area, tags, priority,
 - `--tags` separated by `;` or `,`.
 - `--sprint <sprint>` or `--iterationPath <path>` (not both). `--areaPath <path>`.
 - `--description <text>` or `--descriptionFile <file>` (not both).
+- **Template check.** When `templates/<type>.md` exists (or `--template <name>` picks another), the description is required and written from it: a missing description, or the untouched template, fails before anything is sent; a template section left out prints a warning. The confirmation says which `template` was used. `--noTemplate` skips the check.
 - `--assignedTo <user>`. `--state` initial state.
-- `--format html|markdown` format of the description; default: config `richTextFormat`, else HTML.
+- `--format html|markdown` format of the description; default: Markdown when a template applies, else config `richTextFormat`, else HTML.
 - `--dryRun` print the resolved request (fields, parent link, resolved user and sprint) without creating.
 - `--raw` full created item.
 
@@ -126,7 +134,7 @@ Link types: `System.LinkTypes.Hierarchy-Forward` (child), `System.LinkTypes.Hier
 
 `azdev workitem bulk-create --items '<json-array>' [--raw]` — one entry per item, run in order and not atomic: after a failure the earlier items already exist, so check with `workitem children <parentId>` before re-running (unlike `flow apply`, a re-run creates them again).
 
-- Create: `{"workItemType":"Task","title":"A","parentId":1200,"tags":"x","sprint":"current","assignedTo":"@me","description":"…","format":"markdown"}`.
+- Create: `{"workItemType":"Task","title":"A","parentId":1200,"tags":"x","sprint":"current","assignedTo":"@me","description":"…","format":"markdown"}`. Each create goes through the same template check as `create`; `"template":"<name>"` picks another, `"noTemplate":true` skips it.
 - Update: `{"id":42,"fields":{"System.State":"Done"}}`.
 - `--raw` returns `{ count, workItems }` with full objects. For a story's standard cards, prefer `flow apply`.
 
@@ -173,12 +181,13 @@ Driven by `flows.json` (path: `azdev config paths`). A missing or invalid file e
 
 ### flow apply
 
-`azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <sprint>] [--dryRun]`
+`azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <sprint>] [--descriptions <dir>] [--noTemplate] [--dryRun]`
 
-- Rows: `key`, `action` (exists | created | would-create | skipped | conflict), `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`; `conflicts[]` explains each conflict.
+- Rows: `key`, `action` (exists | created | would-create | skipped | conflict), `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`, `template` (the model the card's description follows), `description` (provided | missing | invalid); `conflicts[]` explains each conflict, `warnings[]` lists template sections left out.
+- `--descriptions <dir>` one `<key>.md` per card to create, written from that card's template (`template` in the row). The model is the card's inline `description` in flows.json, else `templates/<card template or type>.md`. A missing, untouched or unknown-key description fails before **any** card is created. `--noTemplate` creates without descriptions.
 - `--only` only these keys (optional ones included). `--skip` all but these. `--with` optional cards to create too.
 - `--sprint` sprint for every created card, over the card's own and the story's.
-- `--dryRun` the plan without creating. An unknown key exits `1` before anything is created.
+- `--dryRun` the plan without creating — run it first to see which templates to write. An unknown key exits `1` before anything is created.
 
 ### flow list
 
@@ -274,7 +283,7 @@ Driven by `flows.json` (path: `azdev config paths`). A missing or invalid file e
 
 ### config paths
 
-`azdev config paths` — `config`, `flows`, `conventions`, each with `path` and `exists`.
+`azdev config paths` — `config`, `flows`, `conventions`, `templates` (the directory), each with `path` and `exists`.
 
 ### config get
 

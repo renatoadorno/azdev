@@ -36,11 +36,14 @@ export async function runService<S>(
   Service: ServiceClass<S>,
   args: OutputArgs,
   call: (service: S) => Promise<unknown>,
+  options: { plainText?: boolean } = {},
 ): Promise<void> {
   await runCommand(async () => {
     const config = await loadCliConfig();
     if (args.project) config.project = args.project;
 
-    console.log(format(await call(new Service(config)), args));
+    const result = await call(new Service(config));
+    // Markdown meant to be read as-is (a template) skips the toon/JSON encoding.
+    console.log(options.plainText && typeof result === 'string' ? result : format(result, args));
   });
 }

@@ -4,6 +4,7 @@ import { globalOptions, runCommand, runService } from '../command';
 import { flowsPath, loadFlows } from '../flows';
 import { format } from '../formatters/index';
 import { failUsage, parseCsv, parseId, parseOptionalId } from '../parsers';
+import { loadTemplates, readCardDescriptions } from '../templates';
 
 const parentArg = { type: 'positional' as const, description: 'Story (parent) work item ID', required: false };
 const flowArg = { type: 'string' as const, description: "Flow name (default: the one whose parentTypes include the story's type)" };
@@ -37,10 +38,11 @@ const status = defineCommand({
     if (parentId && args.sprint) failUsage('Pass a story ID or --sprint, not both');
     const flows = loadFlows();
 
+    const templates = loadTemplates();
     await runService(FlowService, args, (svc) =>
       parentId
-        ? svc.flowStatus(flows, { parentId, flow: args.flow })
-        : svc.sprintFlowStatus(flows, { sprint: args.sprint!, flow: args.flow, mine: args.mine, teamId: args.teamId }),
+        ? svc.flowStatus(flows, { parentId, flow: args.flow }, templates)
+        : svc.sprintFlowStatus(flows, { sprint: args.sprint!, flow: args.flow, mine: args.mine, teamId: args.teamId }, templates),
     );
   },
 });
@@ -58,11 +60,18 @@ const apply = defineCommand({
     skip: { type: 'string', description: 'Comma-separated card keys not to create' },
     with: { type: 'string', description: 'Comma-separated optional card keys to create too (left out by default)' },
     sprint: { type: 'string', description: 'Sprint for every created card (default: card setting, else the story\'s)' },
-    dryRun: { type: 'boolean', description: 'Show what would be created without creating' },
+    descriptions: {
+      type: 'string',
+      description: "Directory with one <key>.md per card to create — each card's own description, written from its template",
+    },
+    noTemplate: { type: 'boolean', description: 'Skip the template requirement (cards are created without a description)' },
+    dryRun: { type: 'boolean', description: 'Show what would be created, and which template each description follows, without creating' },
   },
   async run({ args }) {
     const parentId = parseId(args.id, 'story work item ID');
     const flows = loadFlows();
+    const templates = loadTemplates();
+    const descriptions = args.descriptions ? readCardDescriptions(args.descriptions) : undefined;
     await runService(FlowService, args, (svc) =>
       svc.applyFlow(flows, {
         parentId,
@@ -72,7 +81,9 @@ const apply = defineCommand({
         with: parseCsv(args.with),
         sprint: args.sprint,
         dryRun: args.dryRun,
-      }),
+        descriptions,
+        noTemplate: args.noTemplate,
+      }, templates),
     );
   },
 });

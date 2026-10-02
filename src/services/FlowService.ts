@@ -2,12 +2,15 @@ import { CommentSortOrder } from 'azure-devops-node-api/interfaces/WorkItemTrack
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import type {
   ApplyFlowParams,
+  FlowCard,
   FlowDefinition,
   FlowStatusParams,
   FlowsFile,
   SprintFlowStatusParams,
 } from '../interfaces/Flows';
+import type { DescriptionTemplate } from '../interfaces/WorkItems';
 import { WorkItemService } from './WorkItemService';
+import { checkDescription, fillTemplate, findTemplate } from './descriptionTemplates';
 import {
   DEFAULT_HYDRATE_FIELDS,
   REMOVED_STATE,
@@ -82,25 +85,38 @@ export class FlowService extends WorkItemService {
     return new Map(entries);
   }
 
-  private async evaluate(flow: FlowDefinition, children: WorkItemRow[], story: WorkItemRow): Promise<FlowEvaluation> {
+  private async evaluate(
+    flow: FlowDefinition,
+    children: WorkItemRow[],
+    story: WorkItemRow,
+    templates: DescriptionTemplate[],
+  ): Promise<FlowEvaluation> {
     const ctx = { title: String(story.Title), id: story.id! };
-    const evaluation = evaluateFlow(flow, children, await this.lastComments(flow, children), ctx);
+    const evaluation = evaluateFlow(flow, children, await this.lastComments(flow, children), ctx, templates);
     return { ...evaluation, others: evaluation.others.map(display) };
   }
 
   /** The story's cycle against its flow: which cards exist, which are missing, and what is off. */
-  public async flowStatus(file: FlowsFile, params: FlowStatusParams): Promise<Record<string, unknown>> {
+  public async flowStatus(
+    file: FlowsFile,
+    params: FlowStatusParams,
+    templates: DescriptionTemplate[] = [],
+  ): Promise<Record<string, unknown>> {
     const story = await this.story(params.parentId);
     const [name, flow] = pickFlow(file, String(story.WorkItemType), params.flow);
     const children = (await this.childrenOf([params.parentId])).get(params.parentId) ?? [];
-    return { story: brief(story), flow: name, ...(await this.evaluate(flow, children, story)) };
+    return { story: brief(story), flow: name, ...(await this.evaluate(flow, children, story, templates)) };
   }
 
   /**
    * Audit of every story in a sprint that has a flow — catch a missing card
    * before someone else does. With `mine`, only stories holding one of my cards.
    */
-  public async sprintFlowStatus(file: FlowsFile, params: SprintFlowStatusParams): Promise<Record<string, unknown>> {
+  public async sprintFlowStatus(
+    file: FlowsFile,
+    params: SprintFlowStatusParams,
+    templates: DescriptionTemplate[] = [],
+  ): Promise<Record<string, unknown>> {
     const iteration = await this.resolveIteration(params.sprint, params.teamId);
     const inSprint = `[System.IterationPath] = '${wiqlEscape(iteration.path!)}'`;
 
@@ -132,7 +148,7 @@ export class FlowService extends WorkItemService {
       // A parent no flow applies to (Epic, Feature…) is not audited; several flows applying is an error.
       if (!params.flow && applicableFlows(file, type).length === 0) continue;
       const [name, flow] = pickFlow(file, type, params.flow);
-      const evaluation = await this.evaluate(flow, childrenByStory.get(story.id!) ?? [], story);
+      const evaluation = await this.evaluate(flow, childrenByStory.get(story.id!) ?? [], story, templates);
       const missing = evaluation.cards.filter(c => c.status === 'missing').map(c => c.key);
       rows.push({
         ...brief(story),
@@ -150,18 +166,59 @@ export class FlowService extends WorkItemService {
    * Creates the cards of the flow the story does not have yet. Idempotent: an
    * existing card (matched by type and title pattern) is never created twice.
    */
-  public async applyFlow(file: FlowsFile, params: ApplyFlowParams): Promise<Record<string, unknown>> {
+  public async applyFlow(
+    file: FlowsFile,
+    params: ApplyFlowParams,
+    templates: DescriptionTemplate[] = [],
+  ): Promise<Record<string, unknown>> {
     const story = await this.story(params.parentId);
     const [name, flow] = pickFlow(file, String(story.WorkItemType), params.flow);
     const children = (await this.childrenOf([params.parentId])).get(params.parentId) ?? [];
     const ctx = { title: String(story.Title), id: params.parentId };
     const plan = planFlow(flow, children, ctx, params);
+    const descriptions = params.descriptions ?? {};
+
+    const unknownKeys = Object.keys(descriptions).filter(key => !flow.cards.some(card => card.key === key));
+    if (unknownKeys.length) {
+      throw new Error(`Descriptions for unknown card key(s): ${unknownKeys.join(', ')}. Cards: ${flow.cards.map(c => c.key).join(', ')}`);
+    }
+
+    // The model each card's description is written from: its inline description, else its template file.
+    const modelFor = (card: FlowCard): DescriptionTemplate | undefined => {
+      if (params.noTemplate) return undefined;
+      if (card.description) return { name: `${card.key} (flows.json)`, content: renderTemplate(card.description, ctx) };
+      return findTemplate(templates, card.template ?? card.type);
+    };
+    const toCreate = plan.filter(p => p.action === 'create');
+    const missingTemplates = toCreate.filter(p => !params.noTemplate && p.card.template && !findTemplate(templates, p.card.template));
+    if (missingTemplates.length) {
+      throw new Error(`Template(s) not found in templates/: ${missingTemplates.map(p => `${p.card.key} → ${p.card.template}`).join(', ')}`);
+    }
+    // Checked before the first create, so a bad description never leaves the story half-built.
+    if (!params.dryRun) {
+      const undescribed = toCreate.filter(p => modelFor(p.card) && descriptions[p.card.key] === undefined);
+      if (undescribed.length) {
+        const list = undescribed.map(p => `${p.card.key} (${modelFor(p.card)!.name})`).join(', ');
+        throw new Error(
+          `Write each card's description from its template and pass them with --descriptions <dir> (<key>.md): ${list}. Read a template with 'azdev workitem template <name>'.`,
+        );
+      }
+      const invalid = toCreate.flatMap(p => {
+        const model = modelFor(p.card);
+        if (!model) return [];
+        const filled = fillTemplate(model.content, { title: p.title, parentId: params.parentId, parentTitle: ctx.title });
+        const { error } = checkDescription(descriptions[p.card.key], filled, model.name);
+        return error ? [`${p.card.key}: ${error}`] : [];
+      });
+      if (invalid.length) throw new Error(`Nothing was created. ${invalid.join(' ')}`);
+    }
 
     const results: WorkItemRow[] = [];
     const created: string[] = [];
+    const warnings: string[] = [];
     const conflicts = plan.filter(p => p.action === 'conflict').map(p => `${p.card.key}: ${p.reason}`);
     // Same columns on every row, so the plan prints as one table.
-    const row = (key: string, action: string, fields: { ids?: string; type: string; title: string; assignedTo?: unknown; state?: unknown; iterationPath?: unknown }) => ({
+    const row = (key: string, action: string, fields: { ids?: string; type: string; title: string; assignedTo?: unknown; state?: unknown; iterationPath?: unknown; template?: string; description?: string }) => ({
       key,
       action,
       ids: fields.ids ?? '',
@@ -170,6 +227,8 @@ export class FlowService extends WorkItemService {
       assignedTo: fields.assignedTo ?? '',
       state: fields.state ?? '',
       sprint: String(fields.iterationPath ?? '').split('\\').pop() ?? '',
+      template: fields.template ?? '',
+      description: fields.description ?? '',
     });
 
     for (const item of plan) {
@@ -179,10 +238,13 @@ export class FlowService extends WorkItemService {
         continue;
       }
 
+      const model = modelFor(card);
+      const description = descriptions[card.key];
       const request = {
         workItemType: card.type,
         title: item.title,
-        description: card.description ? renderTemplate(card.description, ctx) : undefined,
+        description,
+        descriptionModel: model,
         assignedTo: card.assignedTo,
         state: card.state,
         sprint: params.sprint ?? card.sprint,
@@ -191,9 +253,22 @@ export class FlowService extends WorkItemService {
         // Flow descriptions are written in Markdown, whatever the configured default.
         format: 'markdown' as const,
       };
+      const descriptionState = description !== undefined ? 'provided' : model ? 'missing' : '';
 
       if (params.dryRun) {
-        const { operations } = await this.buildCreateRequest(request);
+        // A missing description is reported in the plan; the request is still resolved to show sprint and assignee.
+        const preview = description === undefined ? { ...request, descriptionModel: undefined } : request;
+        let state = descriptionState;
+        let operations: { path?: string; value?: unknown }[] = [];
+        try {
+          const built = await this.buildCreateRequest(preview);
+          operations = built.operations;
+          warnings.push(...built.warnings.map(w => `${card.key}: ${w}`));
+        } catch (err) {
+          state = 'invalid';
+          warnings.push(`${card.key}: ${(err as Error).message}`);
+          operations = (await this.buildCreateRequest({ ...preview, descriptionModel: undefined })).operations;
+        }
         const value = (ref: string) => operations.find(op => op.path === `/fields/${ref}`)?.value;
         results.push(row(card.key, 'would-create', {
           type: card.type,
@@ -201,6 +276,8 @@ export class FlowService extends WorkItemService {
           assignedTo: value('System.AssignedTo'),
           state: value('System.State'),
           iterationPath: value('System.IterationPath'),
+          template: model?.name,
+          description: state,
         }));
         continue;
       }
@@ -216,6 +293,8 @@ export class FlowService extends WorkItemService {
           assignedTo: fields.AssignedTo,
           state: fields.State,
           iterationPath: fields.IterationPath,
+          template: model?.name,
+          description: descriptionState,
         }));
       } catch (err) {
         const done = created.length ? ` Created so far: ${created.join(', ')}.` : '';
@@ -232,6 +311,7 @@ export class FlowService extends WorkItemService {
       dryRun: params.dryRun || undefined,
       cards: results,
       ...(conflicts.length ? { conflicts } : {}),
+      ...(warnings.length ? { warnings } : {}),
     };
   }
 

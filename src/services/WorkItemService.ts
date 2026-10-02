@@ -33,6 +33,7 @@ import {
   wiqlEscape,
 } from './workItemUtils';
 import { richTextToPlain } from './richText';
+import { checkDescription, fillTemplate, needsParentTitle } from './descriptionTemplates';
 
 // Comments resource; 7.1-preview.4 is the first version that takes `format`.
 const COMMENTS_LOCATION_ID = '608aac0a-32e1-4493-a863-b9cf4566d257';
@@ -41,6 +42,8 @@ const COMMENTS_FORMAT_API_VERSION = '7.1-preview.4';
 export interface CreateRequest {
   workItemType: string;
   operations: JsonPatchOperation[];
+  /** Non-blocking problems with the request (sections missing from a templated description). */
+  warnings: string[];
 }
 
 export interface SlimComment {
@@ -259,15 +262,33 @@ export class WorkItemService extends AzureDevOpsService {
     let { areaPath, iterationPath } = params;
     if (params.sprint) iterationPath = (await this.resolveIteration(params.sprint)).path;
 
+    const model = params.descriptionModel;
+    let parentTitle: string | undefined;
+
     // Same as "add child" on the board: the child lands in the parent's area and sprint.
-    if (params.parentId && (!areaPath || !iterationPath)) {
+    const needsParent = !areaPath || !iterationPath || (model !== undefined && needsParentTitle(model.content));
+    if (params.parentId && needsParent) {
       const parent = await this.getWorkItemById({
         id: params.parentId,
-        fields: ['System.AreaPath', 'System.IterationPath'],
+        fields: ['System.AreaPath', 'System.IterationPath', 'System.Title'],
       });
       areaPath ??= parent.fields?.['System.AreaPath'];
       iterationPath ??= parent.fields?.['System.IterationPath'];
+      parentTitle = parent.fields?.['System.Title'];
     }
+
+    // A template is a model to write from: refuse a card without its own content.
+    const warnings: string[] = [];
+    if (model) {
+      const filled = fillTemplate(model.content, { title: params.title, parentId: params.parentId, parentTitle });
+      const check = checkDescription(params.description, filled, model.name);
+      if (check.error) throw new Error(check.error);
+      if (check.missing.length) {
+        warnings.push(`The description leaves out sections of the "${model.name}" template: ${check.missing.join(', ')}`);
+      }
+    }
+    // Templates are Markdown, so a description written from one is too.
+    const format = params.format ?? (model ? 'markdown' : this.config.richTextFormat);
 
     const fields: Record<string, unknown> = {
       'System.Title': params.title,
@@ -280,9 +301,9 @@ export class WorkItemService extends AzureDevOpsService {
       ...params.additionalFields,
     };
 
-    const operations = fieldOperations(fields, params.format ?? this.config.richTextFormat);
+    const operations = fieldOperations(fields, format);
     if (params.parentId) operations.push(parentRelationOperation(this.config.orgUrl, params.parentId));
-    return { workItemType: params.workItemType, operations };
+    return { workItemType: params.workItemType, operations, warnings };
   }
 
   /**
@@ -290,6 +311,7 @@ export class WorkItemService extends AzureDevOpsService {
    */
   public async createWorkItem(params: CreateWorkItemParams): Promise<any> {
     const request = await this.buildCreateRequest(params);
+    for (const warning of request.warnings) console.error(`Warning: ${warning}`);
     const witApi = await this.getWorkItemTrackingApi();
     try {
       return await witApi.createWorkItem(undefined, request.operations, this.config.project, request.workItemType);

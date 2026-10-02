@@ -137,6 +137,53 @@ describe('WorkItemService.buildCreateRequest', () => {
   });
 });
 
+describe('WorkItemService — description written from a template', () => {
+  const model = { name: 'Publication', content: '## PRs\n\n## Janela — {parentTitle}\n\n## Critérios de aceite\n' };
+  const written = '## PRs\n- api: https://x/pr/1\n\n## Janela — Story\n1. deploy\n\n## Critérios de aceite\n- no ar';
+
+  it('refuses a card with no description when its type has a template', async () => {
+    const { svc, calls } = makeService();
+    await expect(svc.createWorkItem({ workItemType: 'Publication', title: 'P', descriptionModel: model })).rejects.toThrow(
+      'follows the "Publication" template',
+    );
+    expect(calls.createWorkItem).toBeUndefined();
+  });
+
+  it('refuses the untouched template, filled with the parent title', async () => {
+    const { svc, calls } = makeService({
+      getWorkItem: async () => ({ id: 5, fields: { 'System.Title': 'Demo story', 'System.AreaPath': 'Demo', 'System.IterationPath': 'Demo\\Sprint 82' } }),
+    });
+    const untouched = '## PRs\n\n## Janela — Demo story\n\n## Critérios de aceite';
+    await expect(svc.createWorkItem({ workItemType: 'Publication', title: 'P', parentId: 5, description: untouched, descriptionModel: model }))
+      .rejects.toThrow('untouched "Publication" template');
+    expect(calls.createWorkItem).toBeUndefined();
+  });
+
+  it('accepts written content as Markdown and warns about a section left out', async () => {
+    const { svc } = makeService();
+    const partial = '## PRs\n- api: https://x/pr/1';
+    const { operations, warnings } = await svc.buildCreateRequest({ workItemType: 'Publication', title: 'P', description: partial, descriptionModel: model });
+    expect(fieldValue(operations, 'System.Description')).toBe(partial);
+    expect(operations).toContainEqual({ op: Operation.Add, path: '/multilineFieldsFormat/System.Description', value: 'Markdown' });
+    expect(warnings).toEqual(['The description leaves out sections of the "Publication" template: Janela —, Critérios de aceite']);
+  });
+
+  it('reads the parent only when the template needs its title', async () => {
+    const needsTitle = makeService();
+    await needsTitle.svc.buildCreateRequest({
+      workItemType: 'Publication', title: 'P', parentId: 5, areaPath: 'Demo', iterationPath: 'Demo\\Sprint 82', description: written, descriptionModel: model,
+    });
+    expect(needsTitle.calls.getWorkItem?.[0]?.[1]).toEqual(['System.AreaPath', 'System.IterationPath', 'System.Title']);
+
+    const noTitle = makeService();
+    await noTitle.svc.buildCreateRequest({
+      workItemType: 'Publication', title: 'P', parentId: 5, areaPath: 'Demo', iterationPath: 'Demo\\Sprint 82',
+      description: written, descriptionModel: { name: 'Publication', content: '## PRs\n' },
+    });
+    expect(noTitle.calls.getWorkItem).toBeUndefined();
+  });
+});
+
 describe('WorkItemService — invalid state', () => {
   const ruleError = Object.assign(new Error('TF401320: Rule Error for field State'), { statusCode: 400 });
 

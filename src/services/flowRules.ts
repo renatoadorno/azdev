@@ -4,7 +4,7 @@
  */
 
 import type { FlowCard, FlowDefinition, FlowsFile } from '../interfaces/Flows';
-import { decodeEntities } from './richText';
+import { fillTemplate, findTemplate, isUnfilled, type DescriptionTemplate } from './descriptionTemplates';
 import { REMOVED_STATE, isClosedState, type WorkItemRow as Row } from './workItemUtils';
 
 export interface TemplateContext {
@@ -52,6 +52,9 @@ function validateCardShape(card: FlowCard, index: number, flowName: string): str
   }
   if (card.retestAfter !== undefined && !Array.isArray(card.retestAfter)) {
     problems.push(`${where}: "retestAfter" must be a list of work item types`);
+  }
+  if (card.template !== undefined && (typeof card.template !== 'string' || !card.template.trim())) {
+    problems.push(`${where}: "template" must be the name of a file in templates/`);
   }
   return problems;
 }
@@ -157,19 +160,6 @@ export function closedAt(row: Row): string | undefined {
   return value ? new Date(value as string).toISOString() : undefined;
 }
 
-// Decode before stripping tags: storage encodes a template's literal `<descreva>` as
-// `&lt;descreva&gt;`, and both sides must normalize the same way.
-function normalized(text: string): string {
-  return decodeEntities(text).replace(/<[^>]*>/g, '').replace(/\s+/g, '');
-}
-
-/** Empty, or still the untouched template `apply` created it with. */
-function isUnfilled(value: unknown, template?: string): boolean {
-  if (typeof value !== 'string') return true;
-  const text = normalized(value);
-  return text === '' || (template !== undefined && text === normalized(template));
-}
-
 function day(iso: string): string {
   return iso.slice(0, 10);
 }
@@ -216,15 +206,33 @@ function latestChange(card: FlowCard, children: Row[]): { row: Row; at: string }
 }
 
 /**
+ * The description `apply` would have given `item` as `card`: the inline one rendered
+ * for the story, else the template file for the card, filled for that item.
+ */
+export function startingDescription(
+  card: FlowCard,
+  item: Row,
+  ctx?: TemplateContext,
+  templates: DescriptionTemplate[] = [],
+): string | undefined {
+  if (card.description) return ctx ? renderTemplate(card.description, ctx) : card.description;
+  const template = findTemplate(templates, card.template ?? card.type);
+  if (!template) return undefined;
+  return fillTemplate(template.content, { title: String(item.Title ?? ''), parentId: ctx?.id, parentTitle: ctx?.title });
+}
+
+/**
  * Audits a story against its flow. `lastCommentAt` maps a card id to its newest
  * comment date — a comment after the latest fix counts as the retest record.
- * `ctx` (the story) renders description templates, so an untouched one counts as empty.
+ * `ctx` (the story) and `templates` rebuild the description each card started
+ * with, so an untouched one counts as empty.
  */
 export function evaluateFlow(
   flow: FlowDefinition,
   children: Row[],
   lastCommentAt: Map<number, string | undefined> = new Map(),
   ctx?: TemplateContext,
+  templates: DescriptionTemplate[] = [],
 ): FlowEvaluation {
   const { matches, unmatched } = matchCards(flow.cards, children);
   const findings: string[] = [];
@@ -236,8 +244,7 @@ export function evaluateFlow(
     }
 
     if (card.requireDescription) {
-      const template = card.description && ctx ? renderTemplate(card.description, ctx) : card.description;
-      for (const item of items.filter(i => isUnfilled(i.Description, template))) {
+      for (const item of items.filter(i => isUnfilled(i.Description, startingDescription(card, i, ctx, templates)))) {
         findings.push(`${card.key}: #${item.id} has no description beyond the template — record what was done or tested, how, and the result`);
       }
     }

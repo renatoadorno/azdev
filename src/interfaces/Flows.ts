@@ -14,8 +14,10 @@ export interface FlowCard {
   /** Sprint for the created card (name, number, `current`); default: the parent's. */
   sprint?: string;
   tags?: string;
-  /** Markdown template for the description. */
+  /** Inline Markdown model for the description (`{title}`/`{id}` are the story's); wins over `template`. */
   description?: string;
+  /** File in templates/ the description is written from; default: the one named after `type`. */
+  template?: string;
   /** Missing is not flagged by `flow status`, and `flow apply` creates it only on request (`--with`). */
   optional?: boolean;
   /** Flag the card when its description is empty. */
@@ -63,4 +65,8 @@ export interface ApplyFlowParams {
   /** Sprint for every created card, overriding the cards' own and the parent's. */
   sprint?: string;
   dryRun?: boolean;
+  /** Description written for each card to create, by card key — required for cards that have a template. */
+  descriptions?: Record<string, string>;
+  /** Skip the template requirement (cards are created without a description). */
+  noTemplate?: boolean;
 }

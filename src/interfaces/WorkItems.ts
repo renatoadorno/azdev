@@ -11,6 +11,16 @@ export interface WorkItemByIdParams {
 export type RichTextFormat = 'html' | 'markdown';
 
 /**
+ * A description template from the user's templates/ directory — a model to write
+ * a card's description from, never the description itself.
+ */
+export interface DescriptionTemplate {
+  /** File name without `.md` — a work item type (`Publication`) or a free name (`Publication [PROD]`). */
+  name: string;
+  content: string;
+}
+
+/**
  * Filters shared by every query that lists work items
  */
 export interface WorkItemFilters {
@@ -121,6 +131,11 @@ export interface CreateWorkItemParams {
   additionalFields?: Record<string, any>;
   /** Rich-text format for multiline fields being set (e.g. System.Description). */
   format?: RichTextFormat;
+  /**
+   * Template the description must be written from: the create is refused when the
+   * description is missing or still the untouched model, and warns on missing sections.
+   */
+  descriptionModel?: DescriptionTemplate;
 }
 
 /**
