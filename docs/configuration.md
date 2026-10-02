@@ -23,6 +23,9 @@ azdev config unset <key>
 | `username` | NTLM / Basic | Username |
 | `password` | NTLM / Basic | Password — stored in the OS keychain, not in the file |
 | `domain` | NTLM only | Windows domain |
+| `richTextFormat` | No | Default format of descriptions and comments written by `create`/`update`/`comment`/`bulk-create` when `--format` is absent: `html` (API default) or `markdown`. Any other value exits `2` |
+
+Story flows for `azdev flow` live in a separate `flows.json` next to `config.json` — see [flow](./commands.md#flow).
 
 ## Credential Storage
 

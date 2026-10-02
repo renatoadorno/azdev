@@ -12,7 +12,13 @@ These flags are available on every command:
 
 Work item IDs (`<id>`, `<cardId>`, `--targetId`) are validated as positive integers before any API call — invalid values exit `1`.
 
-Exit codes: `0` success · `1` error (API failure, invalid ID/flag) · `2` config missing or incomplete.
+Exit codes: `0` success · `1` error (API failure, invalid ID/flag) · `2` config or flows file missing, incomplete or invalid.
+
+Wherever a command takes a **sprint** (`--sprint`, or the positional of `sprint items/summary/capacity`), it accepts `current`, a bare number (`82`), a name (`Sprint 82`), a full path (`MyProject\Sprint 82`) or the iteration GUID. An unknown sprint fails before any write, suggesting close names.
+
+Wherever a command takes a **user** (`--assignedTo`, `--to`, `assignedTo` in flows), `@me` stands for the authenticated account.
+
+**Writes return a compact confirmation** — `id`, type, state, title, assignee, parent, sprint, tags and the browser `url` — instead of the full work item. Pass `--raw` for the full object.
 
 ---
 
@@ -21,6 +27,8 @@ Exit codes: `0` success · `1` error (API failure, invalid ID/flag) · `2` confi
 Work item management.
 
 > **Note:** `list`, `mine`, `search`, `recent` and `children` hydrate their results — WIQL only returns IDs, so the CLI batch-fetches the queried fields and returns ready-to-read rows (great for `--markdown` tables). `children` always includes id/type/state/title/assignee/parent.
+>
+> **To understand one card, use `view`** — fields, description as text, parent, children, links, comments and image URLs in a single call.
 
 ### `workitem list`
 
@@ -70,6 +78,80 @@ azdev workitem get 42 --raw --json
 
 ---
 
+### `workitem view`
+
+Everything needed to understand a work item, in one call:
+
+- the main fields (type, state, title, assignee, sprint, area, tags, priority, board column, dates) and the browser `url`;
+- `description` and `acceptanceCriteria` as readable text — Markdown fields have their storage entities (`&gt;`, `&quot;`) decoded, HTML fields are turned into text with images kept as `![](url)`;
+- `parent`, `children` and other work item `links`, each with id, type, state, title and assignee;
+- `artifacts` (PRs, branches, commits), `hyperlinks` and `attachments`;
+- the latest comments as text, and every attachment `images` URL found in the description, acceptance criteria and comments.
+
+Empty sections are left out.
+
+```
+azdev workitem view <id> [--comments <n>]
+```
+
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `id` | number | — | Work item ID |
+| `--comments` | number | `5` | How many of the latest comments to include (`0` = none) |
+
+**Examples:**
+
+```bash
+azdev workitem view 1200
+azdev workitem view 1200 --comments 0 --json
+```
+
+---
+
+### `workitem comments`
+
+Read the comments of a work item, oldest first, as plain text (mentions read as `@Name` and `#id`). Returns `{ total, comments[] }` with `id`, `author`, `date`, `text`.
+
+```
+azdev workitem comments <id> [--top <n>] [--raw]
+```
+
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `id` | number | — | Work item ID |
+| `--top` | number | `20` | How many of the latest comments to return |
+| `--raw` | boolean | — | Keep the stored HTML/Markdown and report each comment's `format` |
+
+**Examples:**
+
+```bash
+azdev workitem comments 1200
+```
+
+---
+
+### `workitem attachments`
+
+List the attachments of a work item: files attached to it plus images embedded in the description, acceptance criteria and comments (`source` says which). `--download` saves them with the configured credential, so the token never has to leave the keychain — the output gives each local `path`, ready to open.
+
+```
+azdev workitem attachments <id> [--download <dir>]
+```
+
+| Argument/Option | Type | Description |
+|---|---|---|
+| `id` | number | Work item ID |
+| `--download` | path | Directory to save every attachment into (created if missing). Files are named `<guid-prefix>-<fileName>`, never leaving that directory |
+
+**Examples:**
+
+```bash
+azdev workitem attachments 1200
+azdev workitem attachments 1200 --download ./wi-1200
+```
+
+---
+
 ### `workitem children`
 
 List the children of a work item. Direct children by default; use `--recursive` for the whole subtree. Results are hydrated (id, type, state, title, assignee, parent).
@@ -99,20 +181,26 @@ azdev workitem children 7692 --recursive --type Task
 
 ### `workitem history`
 
-Get the revision history of a work item.
+The timeline of a work item: one row per revision that changed a followed field or carries a comment, with `rev`, `date`, `by`, `changes` (`Field: old → new | …`) and `comment`. Revisions that only touched bookkeeping fields are left out.
 
 ```
-azdev workitem history <id>
+azdev workitem history <id> [--fields <csv>] [--allFields] [--maxText <n>] [--raw]
 ```
 
-| Argument | Type | Description |
-|---|---|---|
-| `id` | number | Work item ID |
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `id` | number | — | Work item ID |
+| `--fields` | csv | state, reason, owner, title, type, sprint, tags, board column, parent, dates, work, description | Fields to follow (short or full names) |
+| `--allFields` | boolean | — | Follow every field |
+| `--maxText` | number | `240` | Truncate long values (`0` = no limit) |
+| `--raw` | boolean | — | The raw revisions (one full snapshot per revision) |
 
 **Examples:**
 
 ```bash
 azdev workitem history 42
+azdev workitem history 42 --fields state,assignedTo
+azdev workitem history 42 --raw --json
 ```
 
 ---
@@ -166,14 +254,15 @@ azdev workitem recent --top 20 --skip 10
 Get work items assigned to the current user.
 
 ```
-azdev workitem mine [--state <state>] [--open] [--path <iterationPath>] [--top <n>]
+azdev workitem mine [--sprint <sprint>] [--state <state>] [--open] [--top <n>]
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
+| `--sprint` | string | — | Only this sprint (`current`, `82`, `Sprint 82`, path) |
 | `--state` | string | — | Filter by exact state (e.g., `Active`, `Resolved`) |
 | `--open` | boolean | — | Exclude finished states (Done/Closed/Removed/Completed) |
-| `--path` | string | — | Filter by iteration path |
+| `--path` | string | — | Filter by full iteration path (prefer `--sprint`; not both) |
 | `--top` | number | `100` | Max results |
 
 **Examples:**
@@ -181,15 +270,15 @@ azdev workitem mine [--state <state>] [--open] [--path <iterationPath>] [--top <
 ```bash
 azdev workitem mine
 azdev workitem mine --open
+azdev workitem mine --sprint current --open
 azdev workitem mine --state Active
-azdev workitem mine --path "MyProject\\Sprint 5"
 ```
 
 ---
 
 ### `workitem create`
 
-Create a new work item.
+Create a new work item. Parent link, tags and sprint go in the **same request** — no follow-up `update`/`link` calls.
 
 ```
 azdev workitem create --type <type> --title <title> [options]
@@ -199,23 +288,29 @@ azdev workitem create --type <type> --title <title> [options]
 |---|---|---|---|
 | `--type` | string | Yes | Work item type (e.g., `Task`, `Bug`, `User Story`) |
 | `--title` | string | Yes | Title |
+| `--parent` | number | No | Parent work item. Area and sprint are inherited from it unless given — like "add child" on the board |
+| `--tags` | string | No | Tags separated by `;` or `,` |
+| `--sprint` | string | No | Sprint (`current`, `82`, `Sprint 82`, path) |
 | `--description` | string | No | Description (HTML by default; Markdown with `--format markdown`) |
-| `--assignedTo` | string | No | Assign to user (display name or email) |
+| `--descriptionFile` | path | No | Read the description from a file (`-` = stdin) — keeps long text out of shell quoting |
+| `--assignedTo` | string | No | Assign to user (display name, email or `@me`) |
 | `--state` | string | No | Initial state |
 | `--areaPath` | string | No | Area path |
-| `--iterationPath` | string | No | Iteration path |
-| `--format` | `html` \| `markdown` | No | Rich-text format for the description (any other value exits `1`) |
+| `--iterationPath` | string | No | Iteration path (prefer `--sprint`; not both) |
+| `--format` | `html` \| `markdown` | No | Rich-text format for the description; default: config `richTextFormat`, else HTML |
+| `--dryRun` | boolean | No | Print the resolved request (fields, parent link) without creating |
+| `--raw` | boolean | No | Return the full created work item |
 
-Type or state name uncertain? Run `azdev metadata types` to see the project's types and their valid states.
+Type or state name uncertain? Run `azdev metadata types --type <name>`. An invalid state fails with the list of the type's valid states.
 
 **Examples:**
 
 ```bash
 azdev workitem create --type Task --title "Fix login button"
-azdev workitem create --type Bug --title "Crash on logout" --assignedTo "Jane Doe" --state Active
-azdev workitem create --type Task --title "Spec" --description "## Goals
-- one
-- two" --format markdown
+azdev workitem create --type Task --title "Adjust checkout" --parent 1200 --assignedTo @me --tags "backend"
+azdev workitem create --type "technical tests" --title "Checkout tests" --parent 1200 \
+  --descriptionFile ./tests.md --format markdown --sprint current
+azdev workitem create --type Task --title "After the release" --parent 1300 --sprint 100 --dryRun
 ```
 
 ---
@@ -225,25 +320,29 @@ azdev workitem create --type Task --title "Spec" --description "## Goals
 Update fields on an existing work item.
 
 ```
-azdev workitem update <id> --fields '<json>' [--format html|markdown]
+azdev workitem update <id> [--fields '<json>'] [--title <t>] [--descriptionFile <path>] [--sprint <s>] [--format html|markdown]
 ```
 
 | Argument/Option | Type | Required | Description |
 |---|---|---|---|
 | `id` | number | Yes | Work item ID |
-| `--fields` | JSON string | Yes | JSON object of fields to update |
-| `--format` | `html` \| `markdown` | No | Rich-text format for multiline fields (Description, AcceptanceCriteria, ReproSteps, History); any other value exits `1` |
+| `--fields` | JSON string | No | JSON object of fields to update (reference names) |
+| `--title` | string | No | New title |
+| `--descriptionFile` | path | No | Replace the description with a file's contents (`-` = stdin) |
+| `--sprint` | string | No | Move to a sprint (`current`, `82`, `Sprint 82`, path) |
+| `--format` | `html` \| `markdown` | No | Rich-text format for multiline fields (Description, AcceptanceCriteria, ReproSteps, History); default: config `richTextFormat` |
+| `--raw` | boolean | No | Return the full updated work item |
 
-Rich-text fields (e.g. `System.Description`) render as **HTML** by default — raw Markdown shows up literally. Pass `--format markdown` to have Azure DevOps render Markdown. The format only sticks when the field's **content also changes** in the same update (setting format alone on identical text is a no-op).
+At least one of `--fields`, `--title`, `--descriptionFile` or `--sprint` is required.
+
+Rich-text fields (e.g. `System.Description`) render as **HTML** by default — raw Markdown shows up literally. Pass `--format markdown` (or set `richTextFormat`) to have Azure DevOps render Markdown. The format only sticks when the field's **content also changes** in the same update (setting format alone on identical text is a no-op).
 
 **Examples:**
 
 ```bash
 azdev workitem update 42 --fields '{"System.State":"Done"}'
-azdev workitem update 42 --fields '{"System.Title":"New title","System.AssignedTo":"john@example.com"}'
-
-# Markdown description. Build the JSON with a tool (avoids shell-quoting hell):
-azdev workitem update 42 --fields "$(cat fields.json)" --format markdown
+azdev workitem update 42 --title "Checkout [PROD]" --sprint 83
+azdev workitem update 42 --descriptionFile ./spec.md --format markdown
 ```
 
 ---
@@ -253,13 +352,18 @@ azdev workitem update 42 --fields "$(cat fields.json)" --format markdown
 Add a comment to a work item.
 
 ```
-azdev workitem comment <id> --text <text>
+azdev workitem comment <id> (--text <text> | --file <path>) [--format html|markdown]
 ```
 
 | Argument/Option | Type | Required | Description |
 |---|---|---|---|
 | `id` | number | Yes | Work item ID |
-| `--text` | string | Yes | Comment text (HTML supported) |
+| `--text` | string | One of | Comment text |
+| `--file` | path | One of | Read the comment from a file (`-` = stdin) |
+| `--format` | `html` \| `markdown` | No | `markdown` keeps line breaks and `#id` links; `html` (the API default) collapses `\n` into spaces. Default: config `richTextFormat` |
+| `--raw` | boolean | No | Return the full comment object |
+
+Markdown comments go through the comments API version that accepts a format; if the server still stores HTML, a warning is printed.
 
 > **Note:** `#<number>` autolinks to a work item (e.g. `#42` → work item 42). Don't prefix
 > non-work-item ids (PRs, builds) with `#` or they link to the wrong item — use a full URL.
@@ -268,6 +372,7 @@ azdev workitem comment <id> --text <text>
 
 ```bash
 azdev workitem comment 42 --text "Fixed in PR: https://github.com/myorg/myrepo/pull/87"
+azdev workitem comment 1201 --file ./retest.md --format markdown
 ```
 
 ---
@@ -285,6 +390,9 @@ azdev workitem set-state <id> --state <state> [--comment <text>]
 | `id` | number | Yes | Work item ID |
 | `--state` | string | Yes | New state (e.g., `Active`, `Resolved`, `Closed`) |
 | `--comment` | string | No | Optional comment to add with the state change |
+| `--raw` | boolean | No | Return the full updated work item |
+
+States differ per type (an `Issue` may have no `Removed`). When the API rejects the state, the error lists the valid states of that item's type.
 
 **Examples:**
 
@@ -306,13 +414,15 @@ azdev workitem assign <id> --to <user>
 | Argument/Option | Type | Required | Description |
 |---|---|---|---|
 | `id` | number | Yes | Work item ID |
-| `--to` | string | Yes | User display name or email |
+| `--to` | string | Yes | User display name, email or `@me` |
+| `--raw` | boolean | No | Return the full updated work item |
 
 **Examples:**
 
 ```bash
 azdev workitem assign 42 --to "Jane Doe"
 azdev workitem assign 42 --to "jane@example.com"
+azdev workitem assign 42 --to @me
 ```
 
 ---
@@ -364,14 +474,15 @@ azdev workitem bulk-create --items '<json-array>'
 | Option | Type | Required | Description |
 |---|---|---|---|
 | `--items` | JSON array string | Yes | Array of create or update params |
+| `--raw` | boolean | No | Return `{ count, workItems }` with the full objects |
 
-To create: omit `id`. To update: include `id` and a `fields` object.
+To create: omit `id` (`workItemType`, `title`, and optionally `parentId`, `tags`, `sprint`, `assignedTo`, `description`, `format`…). To update: include `id` and a `fields` object. Returns one compact confirmation per item. To create the standard cards of a story, prefer `flow apply`.
 
 **Examples:**
 
 ```bash
-# Create two tasks
-azdev workitem bulk-create --items '[{"workItemType":"Task","title":"Task A"},{"workItemType":"Task","title":"Task B"}]'
+# Create two tasks under story 1200
+azdev workitem bulk-create --items '[{"workItemType":"Task","title":"Task A","parentId":1200},{"workItemType":"Task","title":"Task B","parentId":1200}]'
 
 # Update two work items
 azdev workitem bulk-create --items '[{"id":42,"fields":{"System.State":"Done"}},{"id":43,"fields":{"System.State":"Active"}}]'
@@ -427,22 +538,52 @@ azdev sprint current --json
 
 ### `sprint items`
 
-Get work items in a specific sprint.
+The work items of a sprint as hydrated rows (id, type, state, title, assignee, parent), with filters.
 
 ```
-azdev sprint items <sprintId> [--teamId <id>]
+azdev sprint items [sprint] [--mine] [--assignedTo <user>] [--type <t>] [--state <s>] [--open] [--teamId <id>]
 ```
 
-| Argument/Option | Type | Description |
-|---|---|---|
-| `sprintId` | string | Sprint ID (GUID or path) |
-| `--teamId` | string | Team ID (optional) |
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `sprint` | string | `current` | Sprint (`current`, `82`, `Sprint 82`, path, GUID) |
+| `--mine` | boolean | — | Only items assigned to me |
+| `--assignedTo` | string | — | Only items assigned to this user (email or display name) |
+| `--type` | string | — | Work item type filter |
+| `--state` | string | — | Exact state filter |
+| `--open` | boolean | — | Exclude finished states |
+| `--teamId` | string | — | Team for `current` (default team otherwise) |
 
 **Examples:**
 
 ```bash
-azdev sprint items "Sprint 5"
-azdev sprint items "abc-def-123" --teamId "my-team-id"
+azdev sprint items --mine --open
+azdev sprint items 82 --type Publication
+azdev sprint items "Sprint 100" --assignedTo alice@example.com
+```
+
+---
+
+### `sprint summary`
+
+A person's delivery in a sprint, grouped by **story** (parent) rather than counted per card. Per story: the person's cards in the sprint (`inSprint`) and the rest of its cycle (`cycle` — other people's review, QA and publication cards, any sprint, with their `Sprint`). Operational work (support, meetings, hot fixes) is kept apart, cards with no parent are listed as `orphans`, and `totals` count by type. Removed cards are left out.
+
+```
+azdev sprint summary [sprint] [--assignedTo <user>] [--operational <csv>] [--teamId <id>]
+```
+
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `sprint` | string | `current` | Sprint |
+| `--assignedTo` | string | you | Whose delivery (email or display name) |
+| `--operational` | csv | `operationalTypes` from flows.json | Types kept apart from product work |
+| `--teamId` | string | — | Team for `current` |
+
+**Examples:**
+
+```bash
+azdev sprint summary 81
+azdev sprint summary current --assignedTo alice@example.com --operational "Support,meetings"
 ```
 
 ---
@@ -452,18 +593,19 @@ azdev sprint items "abc-def-123" --teamId "my-team-id"
 Get capacity for a sprint. Returns per-member activities (`name`, `capacityPerDay`) and days off, plus team totals (`totalCapacityPerDay`, `totalDaysOff`).
 
 ```
-azdev sprint capacity <sprintId> [--teamId <id>]
+azdev sprint capacity [sprint] [--teamId <id>]
 ```
 
-| Argument/Option | Type | Description |
-|---|---|---|
-| `sprintId` | string | Sprint ID |
-| `--teamId` | string | Team ID (optional) |
+| Argument/Option | Type | Default | Description |
+|---|---|---|---|
+| `sprint` | string | `current` | Sprint (`current`, `82`, `Sprint 82`, path, GUID) |
+| `--teamId` | string | — | Team ID (optional) |
 
 **Examples:**
 
 ```bash
-azdev sprint capacity "Sprint 5"
+azdev sprint capacity
+azdev sprint capacity 82
 ```
 
 ---
@@ -805,17 +947,19 @@ Project metadata — runs against the configured project (or `--project`).
 List the work item types available in the project. Slim by default: `name`, `referenceName`, `description`, `states` (state names). Use it to discover valid types and states before `workitem create` / `set-state`.
 
 ```
-azdev metadata types [--raw]
+azdev metadata types [--type <name>] [--raw]
 ```
 
 | Option | Type | Description |
 |---|---|---|
+| `--type` | string | Only this type (case-insensitive) — the quick way to check its states. An unknown type exits `1` listing the types |
 | `--raw` | boolean | Full raw types (color, icon, fields, transitions) |
 
 **Examples:**
 
 ```bash
 azdev metadata types
+azdev metadata types --type Issue
 azdev metadata types --markdown
 ```
 
@@ -837,6 +981,121 @@ azdev metadata tags [--raw]
 
 ```bash
 azdev metadata tags
+```
+
+---
+
+## flow
+
+Story cycles. A **flow** lists the child cards a story is expected to have — implementation, technical tests, code review, QA, publication — so the CLI can create the missing ones in one call and audit a story (or a whole sprint) before someone else does.
+
+Flows live in `flows.json`, next to `config.json` (`~/.config/azdev/flows.json`; it follows `AZDEV_CONFIG_PATH`/`XDG_CONFIG_HOME`). A missing or invalid file exits `2`, listing every problem.
+
+```json
+{
+  "operationalTypes": ["Support", "meetings", "hot fix"],
+  "flows": {
+    "story": {
+      "description": "Story with code",
+      "parentTypes": ["Product Backlog Item"],
+      "cards": [
+        { "key": "impl", "type": "Task", "title": "Implementation: {title}", "assignedTo": "@me", "state": "To Do" },
+        {
+          "key": "tests", "type": "technical tests", "title": "Technical tests: {title}", "assignedTo": "@me",
+          "requireDescription": true, "retestAfter": ["Task", "Issue", "Bug Fix"],
+          "description": "## What was tested\n\n## How\n\n## Result\n"
+        },
+        { "key": "review", "type": "Review", "title": "Code review: {title}", "assignedTo": "reviewer@example.com" },
+        { "key": "pub-hml", "type": "Publication", "title": "{title} [HOMOLOG]", "match": "\\[\\s*HOMOLOG\\s*\\]", "optional": true },
+        { "key": "pub-prod", "type": "Publication", "title": "{title} [PROD]", "match": "\\[\\s*PROD\\s*\\]" }
+      ]
+    }
+  }
+}
+```
+
+Card fields:
+
+- **`key`, `type`, `title`** (required). `title` and `description` take `{title}` and `{id}` of the story.
+- **`match`**: case-insensitive regex an existing child's title must match to count as this card. Without it, any child of `type` counts. Two cards of the same type need distinct `match` patterns — the file is rejected otherwise, since `apply` would otherwise recreate a card on every run.
+- **`assignedTo`, `state`, `tags`, `sprint`, `description`**: what `apply` creates the card with. Descriptions are written as Markdown. Without `sprint`, the card lands in the story's sprint.
+- **`optional`**: `status` does not flag it as missing, and `apply` only creates it with `--with <key>`.
+- **`requireDescription`**: `status` flags the card when its description is empty or still the untouched template.
+- **`retestAfter`**: types whose closing *after* this card makes it stale — a fix landing after the technical tests. A comment on the card, or another card of the same key, closed after the fix clears it.
+
+`operationalTypes` feeds `sprint summary`. `parentTypes` lets `status`/`apply` pick the flow from the story's type; otherwise pass `--flow <name>`.
+
+Children in state `Removed` count as absent.
+
+### `flow list`
+
+The flows defined in `flows.json`, compact.
+
+```
+azdev flow list
+```
+
+---
+
+### `flow status`
+
+Audit a story against its flow: one row per card (`done`, `open`, `missing`, `skipped`) with its ids, states and assignees, `findings` in plain words, and `others` — children that fit no card. With `--sprint`, audits every story of a sprint and returns one row per story (`missing` cards, number of `findings`) plus the findings list.
+
+Findings it reports:
+
+- a required card is missing — and, when a child of the same type exists with a title that misses the `match` (a publication without `[PROD]`), it names that child;
+- a `requireDescription` card has no description;
+- a `retestAfter` card was closed before a later fix, with no comment or new card since.
+
+```
+azdev flow status <storyId> [--flow <name>]
+azdev flow status --sprint <sprint> [--mine] [--teamId <id>]
+```
+
+| Argument/Option | Type | Description |
+|---|---|---|
+| `storyId` | number | Story (parent) work item ID |
+| `--flow` | string | Flow name (default: the one whose `parentTypes` include the story's type). With `--sprint`, every story is audited with it. When several flows apply to a story's type, the command fails asking for `--flow` |
+| `--sprint` | string | Audit every story of this sprint that has a flow |
+| `--mine` | boolean | With `--sprint`: only stories holding one of my cards in that sprint |
+
+**Examples:**
+
+```bash
+azdev flow status 1200
+azdev flow status --sprint current --mine
+```
+
+---
+
+### `flow apply`
+
+Create, as children of the story, the cards of its flow that it does not have yet. **Idempotent**: a card that already exists (same type, title matching `match`) is reported as `exists` and never created twice, so re-running after a failure only creates what is still missing. Optional cards are created only when asked.
+
+```
+azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <s>] [--dryRun]
+```
+
+| Argument/Option | Type | Description |
+|---|---|---|
+| `storyId` | number | Story (parent) work item ID |
+| `--flow` | string | Flow name (default: picked from the story's type) |
+| `--only` | csv | Only these card keys (optional ones included) |
+| `--skip` | csv | Every card except these keys |
+| `--with` | csv | Optional card keys to create too |
+| `--sprint` | string | Sprint for every created card, over the card's own `sprint` and the story's |
+| `--dryRun` | boolean | Show the plan (`exists`, `would-create`, `skipped`) with resolved assignee and sprint, without creating |
+
+An unknown card key exits `1` before anything is created. Each row reports `key`, `action`, `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`.
+
+A card whose title, rendered with the story's real title, would count as another card (a story named `… [HOMOLOG]` makes `{title} [PROD]` match the homolog pattern) is reported as `conflict` and not created — creating it would break idempotency. The reasons are listed under `conflicts`; tighten the other card's `match`.
+
+**Examples:**
+
+```bash
+azdev flow apply 1300 --dryRun
+azdev flow apply 1300
+azdev flow apply 1300 --with pub-hml --skip qa --sprint 100
 ```
 
 ---

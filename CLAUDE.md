@@ -25,10 +25,14 @@ bun run typecheck        # bunx tsc --noEmit
 AZDEV_TEST_KEYCHAIN=1 bun test   # also exercises the real OS keychain
 ```
 
-Tests live in `test/` and cover the config/credential layer only (`bun test`). They
-isolate themselves with `AZDEV_CONFIG_PATH` pointing at a tmpdir and mock
+Tests live in `test/` (`bun test`). They cover the config/credential layer, the
+pure rules (sprint resolution, rich text, WIQL filters, flow audit/plan, sprint
+summary, history timeline, flows.json loading) and `WorkItemService` request
+building against an in-memory fake of the SDK (`test/workItemService.test.ts`).
+They never call Azure DevOps. Config tests isolate themselves with
+`AZDEV_CONFIG_PATH` pointing at a tmpdir (flows.json follows it) and mock
 `src/cli/secrets.ts`; `test/secrets.test.ts` spies on `Bun.secrets` directly.
-The rest of the codebase has no automated tests.
+New logic goes into a pure module first so it can be tested without the network.
 
 ## Architecture
 
@@ -36,7 +40,7 @@ This repo exposes Azure DevOps **task and project management** capabilities via 
 
 - **CLI** (`dist/azdev-*`) — uses `citty`, outputs toon-format by default (token-efficient), with `--json` and `--markdown` flags
 
-**Active modules:** WorkItems, BoardsSprints, Projects, Metadata.
+**Active modules:** WorkItems, BoardsSprints, Projects, Metadata, Flows.
 
 ### Layer structure
 
@@ -44,11 +48,25 @@ This repo exposes Azure DevOps **task and project management** capabilities via 
 src/
   interfaces/       — TypeScript types shared across layers
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
+    Flows.ts        — flows.json schema (FlowsFile/FlowDefinition/FlowCard) and flow params
     *.ts            — Domain-specific param interfaces per command group
   services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
-    AzureDevOpsService.ts  — Base class: creates azdev.WebApi connection, handles auth
+    AzureDevOpsService.ts  — Base class: connection/auth, plus what every service shares:
+                             resolveIteration (--sprint), currentUser/resolveAssignee (@me),
+                             hydrate (batch getWorkItems), queryIds (WIQL → ids), webUrl
     EntraAuthHandler.ts    — Singleton IRequestHandler using DefaultAzureCredential (Entra/OIDC)
-    *Service.ts     — Domain services extending AzureDevOpsService
+    WorkItemService.ts     — CRUD + queries; buildCreateRequest (parent/tags/sprint in one
+                             request, also used by --dryRun), markdown comments, state hints
+    WorkItemViewService.ts — view (one-call context) and attachments (list/download)
+    FlowService.ts         — flow status/apply over FlowsFile
+    *Service.ts     — Other domain services extending AzureDevOpsService
+    Pure modules (no network, unit-tested):
+    workItemUtils.ts — slimWorkItem, WIQL filters/escape, tags, patch ops, constants
+    iterations.ts    — classification node flattening + matchIteration
+    richText.ts      — HTML/Markdown field → text, attachment url parsing
+    flowRules.ts     — flows.json validation, card matching, audit, apply plan
+    sprintSummary.ts — delivery grouped by story
+    history.ts       — revisions → field-change timeline
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
@@ -57,25 +75,31 @@ src/
                       Non-secret config → ~/.config/azdev/config.json (mode 0600)
     secrets.ts      — Bun.secrets wrapper: resolveSecret/storeSecret/deleteSecret/redactSecrets
                       Credentials live in the OS keychain (service com.azdev.cli)
+    flows.ts        — flowsPath() (next to config.json) / loadFlows() (exit 2 when missing/invalid)
     errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
-    parsers.ts      — parseId(): positive-integer validation for work item IDs
+    parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
+                      parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
     warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 14 subcommands
-      sprint.ts     — 4 subcommands
+      workitem.ts   — 17 subcommands
+      sprint.ts     — 5 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
       metadata.ts   — 2 subcommands (types, tags)
+      flow.ts       — list / status / apply
       config.ts     — show / set / get / unset
     formatters/
       index.ts      — format(data, flags) selector
       toon.ts       — encode() from @toon-format/toon (default)
       json.ts       — JSON.stringify
       markdown.ts   — Markdown table for arrays, key:value for objects
-test/               — bun test suite for the config/credential layer
+test/               — bun test suite (config/credentials, pure rules, service request building)
   helpers.ts        — env guard, tmpdir config, process.exit/console.error capture
 ```
+
+Writes (`create`, `update`, `set-state`, `assign`, `link`, `bulk-create`) print
+`svc.summarize(workItem)` — compact fields plus browser url — unless `--raw`.
 
 `loadCliConfig()` is **async** (the keychain API is): every `getService()` in
 `cli/commands/*` awaits it.
@@ -122,7 +146,7 @@ non-default view goes in an `async` callback that returns the value to print.
 
 - `0` — success
 - `1` — error (API failures via `exitWithError`, invalid IDs, invalid flag values)
-- `2` — config file missing/invalid, incomplete, or no credential found (`loadCliConfig` / `config show`)
+- `2` — config file missing/invalid, incomplete, or no credential found (`loadCliConfig` / `config show`); flows.json missing/invalid (`loadFlows`)
 
 ## Configuration
 
@@ -149,6 +173,7 @@ Set values with: `azdev config set orgUrl https://dev.azure.com/myorg`
 | `isOnPremises` | No | `true` for TFS/Azure DevOps Server |
 | `collection` | On-prem only | Collection name |
 | `apiVersion` | On-prem only | API version header |
+| `richTextFormat` | No | `html`/`markdown` default for `--format` on create/update/comment |
 
 ### Credentials
 

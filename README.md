@@ -56,12 +56,13 @@ Override the default project for any command with `--project <name>`.
 
 | Group | Subcommands | Description |
 |---|---|---|
-| `workitem` | 14 | List, search, create, update, comment, link work items; list children |
-| `sprint` | 4 | List sprints, get current sprint, items and capacity |
+| `workitem` | 17 | List, search, create (with parent/tags/sprint), update, comment, link; one-call `view`, comments, attachments, history timeline |
+| `sprint` | 5 | List sprints, current sprint, hydrated items, per-person summary by story, capacity |
 | `board` | 5 | List boards, columns, cards; move cards between columns; team members |
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |
 | `metadata` | 2 | Work item types (with states) and tags of the current project |
-| `config` | 3 | Show, get, and set CLI configuration |
+| `flow` | 3 | Story cycles from `flows.json`: create a story's standard cards, audit a story or a sprint |
+| `config` | 4 | Show, get, set and unset CLI configuration |
 
 Full command reference: [docs/commands.md](./docs/commands.md)
 
@@ -71,7 +72,7 @@ Full command reference: [docs/commands.md](./docs/commands.md)
 |---|---|
 | `0` | Success |
 | `1` | Error — API failure, invalid ID or flag value |
-| `2` | Config file missing or incomplete (`orgUrl`/`project`) |
+| `2` | Config file missing or incomplete (`orgUrl`/`project`), or `flows.json` missing/invalid for `flow` |
 
 ## Documentation
 
