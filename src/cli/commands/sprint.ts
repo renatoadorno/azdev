@@ -1,8 +1,11 @@
 import { defineCommand } from 'citty';
 import { BoardsSprintsService } from '../../services/BoardsSprintsService';
+import { StatsService } from '../../services/StatsService';
+import { expectedCarryoverCards } from '../../services/flowRules';
 import { globalOptions, runService } from '../command';
-import { loadOperationalTypes } from '../flows';
-import { parseCsv } from '../parsers';
+import { loadOperationalTypes, loadOptionalFlows } from '../flows';
+import { failUsage, parseCount, parseCsv } from '../parsers';
+import { statsFilterArgs, statsFilters } from '../statsArgs';
 
 const teamIdArg = { type: 'string' as const, description: 'Team ID (optional)' };
 const sprintArg = {
@@ -83,6 +86,55 @@ const summary = defineCommand({
   },
 });
 
+const progress = defineCommand({
+  meta: {
+    name: 'progress',
+    description: 'How far a sprint is: done/doing/to do (by state category), % done against time elapsed, by type and by assignee; --daily adds a burn-up',
+  },
+  args: {
+    ...globalOptions,
+    sprint: sprintArg,
+    ...statsFilterArgs,
+    daily: { type: 'boolean', description: 'Add items and done items at the end of each working day (one query per day)' },
+    teamId: teamIdArg,
+  },
+  async run({ args }) {
+    await runService(StatsService, args, (svc) =>
+      svc.sprintProgress({ sprint: args.sprint, daily: args.daily, teamId: args.teamId, ...statsFilters(args) }),
+    );
+  },
+});
+
+const carryover = defineCommand({
+  meta: {
+    name: 'carryover',
+    description: 'Items a sprint carried in from earlier sprints (unfinished at their end) and, once it is over, where its unfinished items went',
+  },
+  args: {
+    ...globalOptions,
+    sprint: sprintArg,
+    ...statsFilterArgs,
+    open: { type: 'boolean', description: 'Only items not finished yet' },
+    lookback: { type: 'string', description: 'How many earlier sprints to look back on', default: '6' },
+    teamId: teamIdArg,
+  },
+  async run({ args }) {
+    const lookback = parseCount(args.lookback, '--lookback');
+    if (!lookback) failUsage('--lookback must be at least 1');
+    const flows = loadOptionalFlows();
+    await runService(StatsService, args, (svc) =>
+      svc.sprintCarryover({
+        sprint: args.sprint,
+        lookback,
+        openOnly: args.open,
+        teamId: args.teamId,
+        rules: { backlogSprints: flows?.backlogSprints ?? [], expected: expectedCarryoverCards(flows) },
+        ...statsFilters(args),
+      }),
+    );
+  },
+});
+
 const capacity = defineCommand({
   meta: { name: 'capacity', description: 'Get sprint capacity' },
   args: {
@@ -97,5 +149,5 @@ const capacity = defineCommand({
 
 export default defineCommand({
   meta: { name: 'sprint', description: 'Sprint commands' },
-  subCommands: { list, current, items, summary, capacity },
+  subCommands: { list, current, items, summary, progress, carryover, capacity },
 });

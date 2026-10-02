@@ -8,6 +8,7 @@ import board from '../src/cli/commands/board';
 import project from '../src/cli/commands/project';
 import metadata from '../src/cli/commands/metadata';
 import flow from '../src/cli/commands/flow';
+import stats from '../src/cli/commands/stats';
 import config from '../src/cli/commands/config';
 import { validateFlows } from '../src/services/flowRules';
 
@@ -25,7 +26,7 @@ const skills = fs.readdirSync(SKILLS_DIR).map(dir => {
   return { dir, file, text: fs.readFileSync(file, 'utf-8') };
 });
 
-const GROUPS: Record<string, { subCommands?: unknown }> = { workitem, sprint, board, project, metadata, flow, config };
+const GROUPS: Record<string, { subCommands?: unknown }> = { workitem, sprint, board, project, metadata, flow, stats, config };
 const subCommands = (group: string) => Object.keys((GROUPS[group]!.subCommands ?? {}) as object);
 
 function frontmatter(text: string): Record<string, unknown> {

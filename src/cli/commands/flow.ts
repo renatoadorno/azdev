@@ -3,10 +3,17 @@ import { FlowService } from '../../services/FlowService';
 import { globalOptions, runCommand, runService } from '../command';
 import { flowsPath, loadFlows } from '../flows';
 import { format } from '../formatters/index';
-import { failUsage, parseCsv, parseId, parseOptionalId } from '../parsers';
+import { failUsage, parseCsv, parseId, parseJsonObject, parseOptionalId } from '../parsers';
 import { loadTemplates, readCardDescriptions } from '../templates';
 
 const parentArg = { type: 'positional' as const, description: 'Story (parent) work item ID', required: false };
+
+function parseTitles(value: string): Record<string, string> {
+  const titles = parseJsonObject(value, '--titles');
+  const notText = Object.keys(titles).filter(key => typeof titles[key] !== 'string');
+  if (notText.length) failUsage(`--titles values must be strings: ${notText.join(', ')}`);
+  return titles as Record<string, string>;
+}
 const flowArg = { type: 'string' as const, description: "Flow name (default: the one whose parentTypes include the story's type)" };
 
 const list = defineCommand({
@@ -60,6 +67,11 @@ const apply = defineCommand({
     skip: { type: 'string', description: 'Comma-separated card keys not to create' },
     with: { type: 'string', description: 'Comma-separated optional card keys to create too (left out by default)' },
     sprint: { type: 'string', description: 'Sprint for every created card (default: card setting, else the story\'s)' },
+    name: { type: 'string', description: "Feature name for {title} in the cards' titles, instead of the story's title" },
+    titles: {
+      type: 'string',
+      description: 'JSON object of whole titles by card key, e.g. {"pub-prod":"Deploy X [PROD]"} — each must still match its card\'s "match"',
+    },
     descriptions: {
       type: 'string',
       description: "Directory with one <key>.md per card to create — each card's own description, written from its template",
@@ -72,6 +84,8 @@ const apply = defineCommand({
     const flows = loadFlows();
     const templates = loadTemplates();
     const descriptions = args.descriptions ? readCardDescriptions(args.descriptions) : undefined;
+    const titles = args.titles ? parseTitles(args.titles) : undefined;
+    if (args.name !== undefined && !args.name.trim()) failUsage('--name is empty');
     await runService(FlowService, args, (svc) =>
       svc.applyFlow(flows, {
         parentId,
@@ -80,6 +94,8 @@ const apply = defineCommand({
         skip: parseCsv(args.skip),
         with: parseCsv(args.with),
         sprint: args.sprint,
+        name: args.name,
+        titles,
         dryRun: args.dryRun,
         descriptions,
         noTemplate: args.noTemplate,

@@ -4,6 +4,7 @@ import { defineCommand } from 'citty';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { WorkItemService } from '../../services/WorkItemService';
 import { WorkItemViewService } from '../../services/WorkItemViewService';
+import { StatsService } from '../../services/StatsService';
 import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../../services/history';
 import { attachmentFileName } from '../../services/richText';
 import { slimWorkItem } from '../../services/workItemUtils';
@@ -37,6 +38,78 @@ const list = defineCommand({
   },
   async run({ args }) {
     await runService(WorkItemService, args, (svc) => svc.listWorkItems(args.query!));
+  },
+});
+
+const query = defineCommand({
+  meta: {
+    name: 'query',
+    description: 'Free query: filter flags and/or a WIQL condition (--where) or a whole WIQL query (--wiql); rows, --count or --groupBy',
+  },
+  args: {
+    ...globalOptions,
+    type: { type: 'string', description: 'Work item type(s), comma-separated' },
+    state: { type: 'string', description: 'State(s), comma-separated' },
+    open: { type: 'boolean', description: 'Exclude finished states (Done/Closed/Removed/Completed)' },
+    mine: { type: 'boolean', description: 'Only items assigned to me' },
+    assignedTo: { type: 'string', description: "Only items assigned to this user (e-mail or name; '@me' = you)" },
+    unassigned: { type: 'boolean', description: 'Only items with no assignee' },
+    sprint: sprintArg,
+    area: { type: 'string', description: 'Area path (subareas included)' },
+    tags: { type: 'string', description: 'Items carrying every one of these tags, comma-separated' },
+    text: { type: 'string', description: 'Text in the title or the description' },
+    parent: { type: 'string', description: 'Only children of this work item' },
+    createdSince: { type: 'string', description: 'Created on or after: 7d, 2w, 3m, 1y, today, yesterday or YYYY-MM-DD' },
+    changedSince: { type: 'string', description: 'Changed on or after (same forms)' },
+    closedSince: { type: 'string', description: 'Closed on or after (same forms)' },
+    where: { type: 'string', description: "Extra WIQL condition; short names in brackets are resolved, e.g. \"[priority] = 1 AND [title] CONTAINS 'PROD'\"" },
+    wiql: { type: 'string', description: 'A whole WIQL query, run as given (no filter flags)' },
+    wiqlFile: { type: 'string', description: "Read the whole WIQL query from a file ('-' = stdin)" },
+    fields: { type: 'string', description: 'Columns to return, comma-separated (short, display or reference names)' },
+    orderBy: { type: 'string', description: "Order, e.g. 'changed desc' or 'priority, id' (default: changed desc)" },
+    top: { type: 'string', description: 'Max rows (0 = no limit)', default: '100' },
+    count: { type: 'boolean', description: 'Only how many items match' },
+    groupBy: { type: 'string', description: 'Count the matches by these fields, comma-separated (e.g. state,assignedTo)' },
+    printWiql: { type: 'boolean', description: 'Print the WIQL the flags build, without running it' },
+  },
+  async run({ args }) {
+    const wiql = textOrFile(args.wiql, args.wiqlFile, ['wiql', 'wiqlFile']);
+    const filterFlags = ['type', 'state', 'open', 'mine', 'assignedTo', 'unassigned', 'sprint', 'area', 'tags', 'text', 'parent', 'createdSince', 'changedSince', 'closedSince', 'where', 'orderBy'] as const;
+    const used = filterFlags.filter(flag => args[flag] !== undefined && args[flag] !== false);
+    if (wiql !== undefined && used.length) failUsage(`--wiql runs as given: drop ${used.map(f => `--${f}`).join(', ')} or write them into the query`);
+    if (wiql !== undefined && !/^\s*select\b/i.test(wiql)) failUsage('--wiql must be a whole query starting with SELECT (use --where for a condition)');
+    if (args.count && args.groupBy) failUsage('Pass --count or --groupBy, not both');
+    if (args.mine && args.assignedTo) failUsage('Pass --mine or --assignedTo, not both');
+    if (args.unassigned && (args.mine || args.assignedTo)) failUsage('--unassigned excludes --mine and --assignedTo');
+    const top = parseCount(args.top, '--top');
+    const parentId = parseOptionalId(args.parent, 'parent work item ID');
+
+    await runService(WorkItemService, args, (svc) =>
+      svc.queryWorkItems({
+        types: parseCsv(args.type),
+        states: parseCsv(args.state),
+        openOnly: args.open,
+        mine: args.mine,
+        assignedTo: args.assignedTo,
+        unassigned: args.unassigned,
+        sprint: args.sprint,
+        area: args.area,
+        tags: parseCsv(args.tags),
+        text: args.text,
+        parentId,
+        createdSince: args.createdSince,
+        changedSince: args.changedSince,
+        closedSince: args.closedSince,
+        where: args.where,
+        wiql,
+        fields: parseCsv(args.fields),
+        orderBy: args.orderBy,
+        top,
+        count: args.count,
+        groupBy: parseCsv(args.groupBy),
+        printWiql: args.printWiql,
+      }),
+    );
   },
 });
 
@@ -175,6 +248,21 @@ const children = defineCommand({
         type: args.type,
       }),
     );
+  },
+});
+
+const progress = defineCommand({
+  meta: {
+    name: 'progress',
+    description: "How far a story is: its whole subtree done/doing/to do by type and assignee, sprints it spans, what is still open and for how long",
+  },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Story (parent) work item ID', required: true },
+  },
+  async run({ args }) {
+    const id = parseId(args.id);
+    await runService(StatsService, args, (svc) => svc.storyProgress({ id }));
   },
 });
 
@@ -444,12 +532,14 @@ export default defineCommand({
   meta: { name: 'workitem', description: 'Work item commands' },
   subCommands: {
     list,
+    query,
     get,
     view,
     comments,
     attachments,
     template,
     children,
+    progress,
     history,
     search,
     recent,

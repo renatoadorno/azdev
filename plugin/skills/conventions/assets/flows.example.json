@@ -1,5 +1,6 @@
 {
   "operationalTypes": ["Support", "meetings", "hot fix"],
+  "backlogSprints": ["Backlog"],
   "flows": {
     "story": {
       "description": "Story with code: technical tests, code review, publication and implementation",
@@ -33,7 +34,8 @@
           "key": "pub-prod",
           "type": "Task",
           "title": "{title} [PROD]",
-          "match": "\\[\\s*PROD\\s*\\]"
+          "match": "\\[\\s*PROD\\s*\\]",
+          "expectedCarryover": true
         },
         {
           "key": "impl",

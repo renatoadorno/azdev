@@ -44,6 +44,7 @@ Create it when it is missing and the user wants `azdev flow`, or asks to set up 
    - `assignedTo` → real emails (`azdev board members`); `operationalTypes` → real types, or drop it.
    - `match` → the title markers seen on the board, covering every variant the team uses for the same card (`\[\s*PROD\s*\]|deploy\s+produ`, written `\\[\\s*PROD\\s*\\]|deploy\\s+produ` inside JSON) — a variant left out makes `flow apply` duplicate cards titled that way.
    - `retestAfter` → only the types of fix cards. A type that the flow's own review or publication cards also use flags the tests as stale every time one of them closes.
+   - `backlogSprints` → the sprints the team uses as a waiting list (a parking-lot sprint), or drop it. `expectedCarryover: true` → on cards that move sprints by design, such as a production publication waiting for its deploy window. Both keep normal process moves out of `sprint carryover`, which otherwise reads them as work pushed forward.
    - Children are matched to cards in file order, and a card without `match` takes every remaining child of its type — list it after the other cards of that type.
 3. Write it at `flows.path`, then run `azdev flow list` — a file that does not validate exits `2` listing every problem.
 4. Preview on a real story with `azdev flow status <storyId>` and `azdev flow apply <storyId> --dryRun`. The dry run does not check types, states or assignees against Azure DevOps — a wrong one fails only on the real `apply` — so verify them in step 2. Setup ends at the dry run; the first real `apply` is the user's call.

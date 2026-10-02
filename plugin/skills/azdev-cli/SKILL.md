@@ -1,11 +1,11 @@
 ---
 name: azdev-cli
-description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; create, update, comment on, assign or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story."
+description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; create, update, comment on, assign or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story; measure progress of a sprint or story, delivery per sprint or week, lead and cycle time, aging or work carried over between sprints; query or count cards by any field."
 ---
 
 # azdev CLI
 
-`azdev` is the Azure DevOps CLI on this machine — 48 subcommands across 7 groups (workitem, sprint, board, project, metadata, flow, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
+`azdev` is the Azure DevOps CLI on this machine — 56 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
 
 ## Preflight
 
@@ -31,6 +31,7 @@ One call answers each of these — reach for it before composing WIQL or chainin
 - A sprint by type, state or person → `azdev sprint items <sprint> --type <t> | --state <s> | --assignedTo <user>`
 - Mine across sprints → `azdev workitem mine --open`
 - Text search → `azdev workitem search "<text>"`
+- Any other question about cards — filters, counts, groups → `azdev workitem query` with `--type a,b`, `--state`, `--sprint`, `--assignedTo`, `--tags`, `--text`, `--parent`, `--changedSince 7d`, `--closedSince 2026-09-01` and a free `--where "[priority] = 1"`; `--count` or `--groupBy state,assignedTo` for numbers, `--fields` for columns. `--printWiql` shows the query built; a whole WIQL query goes in `--wiql`. Field names: `azdev metadata fields --search <text>`.
 
 **Write**
 - The model for a card's description → `azdev workitem template <type> --title <t> --parent <id>` (no name lists them)
@@ -44,9 +45,15 @@ One call answers each of these — reach for it before composing WIQL or chainin
 - Is the story complete? → `azdev flow status <storyId>`
 - Which of my stories miss cards? → `azdev flow status --sprint current --mine`
 - Create the missing cards → `azdev flow apply <storyId> --dryRun` (each row names the `template` its description follows); write one `<key>.md` per card in a temporary directory; show the plan and the descriptions, wait for the user's go-ahead, then `azdev flow apply <storyId> --descriptions <dir>`
+- Card titles are the flows.json ones filled with the story title. A feature named apart from its story → `--name "<feature>"`; one card's whole title → `--titles '{"<key>":"<title>"}'` (it must still match the card's `match`, or the row comes back `conflict`)
 
 **Analyze**
 - Someone's delivery in a sprint → `azdev sprint summary <sprint> [--assignedTo <user>]` — grouped by story, with the rest of each story's cycle and operational work apart. Counting cards per assignee misreads delivery.
+- How far a sprint is → `azdev sprint progress [<sprint>] [--mine] [--daily]` — done/doing/to do by state category, % done against time elapsed (`pace`), by type and by assignee; `--daily` adds a burn-up.
+- How far a story is → `azdev workitem progress <storyId>` — its whole subtree, the sprints it spans and what is still open, for how long.
+- Work pushed from sprint to sprint → `azdev sprint carryover [<sprint>] [--mine]` — items still unfinished at the end of earlier sprints, and, for a finished sprint, where its unfinished items went.
+- Delivery over time → `azdev stats throughput [--by week] [--last 6] [--mine]`; speed → `azdev stats cycle-time [--since 90d | --sprint <s>] [--by assignedTo]` (read its `boardHabits`: with a `caveat`, cards moved on the board after the work, so lead over cycle time and the caveat goes along with the numbers); what is stuck → `azdev stats aging [--mine] [--inProgress]` (`sprintOver` marks items left behind in a finished sprint).
+- Every stats command takes `--mine`, `--assignedTo`, `--type` and `--product` (leaves out flows.json `operationalTypes`). flows.json `backlogSprints` (waiting lists) and cards with `expectedCarryover` (a publication waiting for its window) keep normal process moves out of carry-over — say so when presenting the numbers.
 - Valid states of a type → `azdev metadata types --type <name>`. Existing tags → `azdev metadata tags`. Emails → `azdev board members`.
 
 Values: a sprint is `current`, `82`, `Sprint 82`, a path or a GUID; a user is an email, a display name or `@me`.

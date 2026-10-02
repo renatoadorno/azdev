@@ -6,6 +6,7 @@ import board from './commands/board';
 import project from './commands/project';
 import metadata from './commands/metadata';
 import flow from './commands/flow';
+import stats from './commands/stats';
 import config from './commands/config';
 import { silenceDependencyWarnings } from './warnings';
 
@@ -18,7 +19,7 @@ silenceDependencyWarnings();
 
 const main = defineCommand({
   meta: { name: 'azdev', version, description: 'Azure DevOps CLI — optimized for AI consumers' },
-  subCommands: { workitem, sprint, board, project, metadata, flow, config },
+  subCommands: { workitem, sprint, board, project, metadata, flow, stats, config },
 });
 
 runMain(main);

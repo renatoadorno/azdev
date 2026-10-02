@@ -67,6 +67,31 @@ Output: main fields (type, state, title, assignee, sprint, area, tags, priority,
 - `--recursive` the whole subtree.
 - `--mine` only mine. `--open` exclude Done/Closed/Removed/Completed. `--state` exact state. `--type` exact type.
 
+### workitem progress
+
+`azdev workitem progress <storyId>` — how far a story is, over its whole subtree.
+
+Output: `story` (type, state, title, assignee, `sprint`, `ageDays`, `leadTimeDays` once done, `firstActivity`, `lastDelivery`), `totals` (`items`, `todo`, `doing`, `done`, `donePct`, `removed` — removed items are left out of `items`), `effort` when items carry Effort/Story Points or Remaining Work, `sprints` the children span, `byType` and `byAssignee` (items, todo, doing, done, donePct), `open[]` with `ageDays`, `daysInState`, `daysSinceChange`, longest wait first. Buckets come from each type's state categories, so a custom state (`staging`, `Committed`) lands where the process puts it.
+
+### workitem query
+
+`azdev workitem query [filters] [--where <wiql>] [--fields <csv>] [--orderBy <order>] [--top N] [--count | --groupBy <csv>] [--printWiql]` — a free query, newest change first. Filters combine with AND:
+
+- `--type`, `--state` one value or several, comma-separated. `--open` exclude finished states.
+- `--mine`, `--assignedTo <user>` or `--unassigned` (one of them).
+- `--sprint <sprint>`, `--area <path>` (subareas included), `--parent <id>` (direct children).
+- `--tags a,b` carrying every tag. `--text <t>` in title or description.
+- `--createdSince`, `--changedSince`, `--closedSince`: `7d`, `2w`, `3m`, `1y`, `today`, `yesterday` or `YYYY-MM-DD`.
+- `--where "<condition>"` any extra WIQL condition, ANDed. Field names in brackets may be short: `[priority] = 1`, `[assignedTo] = @me`, `[Remaining Work] > 4`, `[Custom.Squad] = 'Core'`; quoted text is left alone (`[title] CONTAINS '[PROD]'`). Macros work: `@me`, `@today - 7`.
+- `--wiql "<query>"` or `--wiqlFile <file>` a whole WIQL query (starting with `SELECT`), run as given — no filter flags with it. Its `SELECT` columns are returned unless `--fields` says otherwise; `FROM WorkItemLinks` queries return their targets.
+
+Output:
+- Rows (default): id, type, state, title, assignee, parent; `--fields` exactly these columns, in that order, empty where an item has no value. `--orderBy "closed desc, id"` (default `changed desc`). `--top N` max rows (default 100, `0` = no limit); hitting it prints a warning.
+- `--count` → `{ count }` over every match. `--groupBy state,assignedTo` → `{ total, groups[] }`, one row per combination with its `count`, largest first.
+- `--printWiql` → `{ wiql }`, the query the flags build, without running it.
+
+Field names (`--fields`, `--groupBy`, `--orderBy`, `[…]` in `--where`): aliases `id, title, state, reason, type, assignedTo, createdBy, changedBy, tags, parent, area, sprint, created, changed, activated, resolved, closed, stateChange, priority, severity, effort, storyPoints, remaining, originalEstimate, completedWork, description, history, boardColumn, boardLane, commentCount`; else a reference name, a display name (`Remaining Work`) or the last segment of a custom field (`squad` for `Custom.Squad`). Unknown names fail with suggestions; `azdev metadata fields` lists them all. More than 20,000 matches fails asking to narrow the filters.
+
 ### workitem mine
 
 `azdev workitem mine [--sprint <sprint>] [--state <s>] [--open] [--top N]` — my items, newest first.
@@ -84,7 +109,7 @@ Output: main fields (type, state, title, assignee, sprint, area, tags, priority,
 
 ### workitem list
 
-`azdev workitem list [--query <wiql>]` — raw WIQL, hydrated with the queried columns. Default query: every item of the project, newest first. Prefer the commands above; use WIQL only for a filter they lack.
+`azdev workitem list [--query <wiql>]` — raw WIQL, hydrated with the queried columns. Default query: every item of the project, newest first. Prefer `workitem query`, which builds the WIQL from flags and also counts and groups.
 
 ### workitem create
 
@@ -152,6 +177,26 @@ Link types: `System.LinkTypes.Hierarchy-Forward` (child), `System.LinkTypes.Hier
 
 Output: `sprint`, `assignee`, `totals` (cards, done, product, operational, stories, byType), `stories[]` (`story`, `inSprint` — the person's cards in the sprint, `cycle` — the story's other cards, any assignee and sprint, with `Sprint`), `orphans` (cards with no parent), `operational`. Removed cards are left out. `--assignedTo` defaults to you; `--operational` defaults to `operationalTypes` in flows.json.
 
+### sprint progress
+
+`azdev sprint progress [sprint] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--daily] [--teamId <id>]` — how far a sprint is (default `current`).
+
+Output: `sprint` (`startDate`, `finishDate`, `workingDays`, `daysElapsed` — today not counted, `daysLeft`, `timeElapsedPct`, `state` not started|running|finished), `totals` (`items`, `todo`, `doing`, `done`, `donePct`, `removed` apart), `pace` (`expectedDonePct` = time elapsed, `actualDonePct`, `gap`, `status` ahead | on track | behind), `effort` when items carry estimates, `byState` (state, bucket, count), `byType`, `byAssignee`.
+
+- Buckets follow each type's state categories: Proposed → todo, InProgress/Resolved → doing, Completed → done.
+- `--daily` adds `daily[]` (`date`, `items`, `done`, `donePct`) at the end of each working day so far — a burn-up that also shows scope added mid-sprint. Two queries per day.
+- `--product` leaves out the `operationalTypes` of flows.json. `--type` only these types.
+
+### sprint carryover
+
+`azdev sprint carryover [sprint] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--open] [--lookback N] [--teamId <id>]` — work pushed from sprint to sprint (default `current`).
+
+- An item is **carried** once for every earlier sprint (the team's, by dates) it was still unfinished in at that sprint's end — read with ASOF queries, so it reflects the board as it was. `--lookback N` earlier sprints to check (default 6). `--open` only items not finished yet.
+- flows.json `backlogSprints` (waiting lists such as a parking-lot sprint) are never counted as a sprint an item was carried from. Items fitting a card with `expectedCarryover: true` (a production publication waiting for its deploy window) go to `expected[]` instead of the count.
+- Output: `lookedBack`, `totals` (`items`, `carriedIn`, `carriedInPct`, `timesCarried`, `expected`), `byAssignee`, `carriedIn[]` (`carried` count, `from` the sprints, oldest first), `expected[]`.
+- A finished sprint adds `carriedOut`: the items unfinished at its end and where each is now — `moved` (to another sprint), `parked` (in a backlog sprint), `expected`, `closed late` (still in the sprint, finished after its end), `still open`, `removed` — with counts per kind.
+- Earlier sprints are the team's sprints that started before this one and ended by its first day; overlapping sprints are not earlier. `--lookback` must be at least 1.
+
 ### sprint current
 
 `azdev sprint current [--teamId <id>]` — `id`, `name`, `path`, start and finish dates.
@@ -181,12 +226,14 @@ Driven by `flows.json` (path: `azdev config paths`). A missing or invalid file e
 
 ### flow apply
 
-`azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <sprint>] [--descriptions <dir>] [--noTemplate] [--dryRun]`
+`azdev flow apply <storyId> [--flow <name>] [--only <keys>] [--skip <keys>] [--with <keys>] [--sprint <sprint>] [--name <feature>] [--titles <json>] [--descriptions <dir>] [--noTemplate] [--dryRun]`
 
 - Rows: `key`, `action` (exists | created | would-create | skipped | conflict), `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`, `template` (the model the card's description follows), `description` (provided | missing | invalid); `conflicts[]` explains each conflict, `warnings[]` lists template sections left out.
 - `--descriptions <dir>` one `<key>.md` per card to create, written from that card's template (`template` in the row). The model is the card's inline `description` in flows.json, else `templates/<card template or type>.md`. A missing, untouched or unknown-key description fails before **any** card is created. `--noTemplate` creates without descriptions.
 - `--only` only these keys (optional ones included). `--skip` all but these. `--with` optional cards to create too.
 - `--sprint` sprint for every created card, over the card's own and the story's.
+- `--name "<feature>"` fills `{title}` in the cards' titles (and inline descriptions) with the feature's name instead of the story's title — a feature spanning repositories under a story named otherwise. `{parentTitle}` in templates stays the story's title. The output echoes `name`.
+- `--titles '{"pub-prod":"Deploy API + app [PROD]"}'` whole titles by card key (`{title}`/`{id}` allowed). A title must still match its card's `match`, or the row is a `conflict` and the card is not created; an unknown key or an empty title exits before anything is created; a title for a card that already exists or is skipped is not applied and comes back in `warnings`.
 - `--dryRun` the plan without creating — run it first to see which templates to write. An unknown key exits `1` before anything is created.
 
 ### flow list
@@ -225,9 +272,44 @@ Driven by `flows.json` (path: `azdev config paths`). A missing or invalid file e
 
 `azdev metadata types [--type <name>] [--raw]` — types with their states. `--type` one type (case-insensitive; unknown exits `1` listing the types). `--raw` colors, icons, fields, transitions.
 
+### metadata fields
+
+`azdev metadata fields [--search <text>] [--raw]` — the project's fields: `referenceName`, `name`, `type` — the names `workitem query` takes. `--search` keeps fields whose name or reference name contains the text. `--raw` the full field objects.
+
 ### metadata tags
 
 `azdev metadata tags [--raw]` — existing tag names; reuse them instead of inventing variants.
+
+---
+
+## stats
+
+Numbers over time. Every stats command takes `--mine`, `--assignedTo <user>`, `--type <csv>`, `--product` (leaves out flows.json `operationalTypes`) and `--teamId <id>` (whose sprints). Done means the Completed state category of each type; removed items never count. Sprint progress and carry-over live under `sprint`, a story's progress under `workitem progress`.
+
+### stats throughput
+
+`azdev stats throughput [--by sprint|week] [--last N] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--teamId <id>]` — delivered items.
+
+- `--by sprint` (default): the team's last `N` sprints that have started (default 6; flows.json `backlogSprints` left out). Each row: `sprint`, `start`, `finish`, `planned` (items in it at its end), `done` (done at its end), `donePct`, `notDone`, `current` (still running). Read as of each sprint's end, so later moves do not rewrite it.
+- `--by week`: items closed per ISO week, the last `N` weeks; the running week is `current`. The close day is ClosedDate, or the last state change for a type that does not set it (same in `cycle-time`).
+- `avgDone`, `medianDone` (and `avgDonePct` by sprint) over the finished periods only.
+
+### stats cycle-time
+
+`azdev stats cycle-time [--since <date> | --sprint <sprint>] [--by type|assignedTo|none] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--teamId <id>]` — how long delivered items took.
+
+- Scope: items closed since `--since` (default `90d`; `3m`, `1y`, `YYYY-MM-DD`), or the done items of `--sprint`.
+- `leadTimeDays` (created → closed) and `cycleTimeDays` (activated → closed): `items`, `avg`, `median`, `p85`, `max`.
+- `boardHabits`: how far those numbers measure the work rather than the board — `createdNearClose` (created less than an hour before closing: registered after the work), `activatedNearClose` (entered an in-progress state less than an hour before closing), `neverActivated` (no cycle time). A `caveat` appears when at least 20% of the activated items or 10% of all items moved that late; then prefer lead time and pass the caveat on with the numbers.
+- `byType` / `byAssignee` (`--by`, default type): `items`, `leadMedian`, `leadP85`, `cycleMedian`, `cycleP85`. `slowest[]` the five longest.
+
+### stats aging
+
+`azdev stats aging [--sprint <sprint>] [--state <csv>] [--inProgress] [--minDays N] [--top N] [--includeParked] [--mine] [--assignedTo <user>] [--type <csv>] [--product] [--teamId <id>]` — open items by how long they have sat in their current state.
+
+- `--inProgress` only items already started (what is stuck rather than waiting to start). `--minDays N` only items at least `N` days in their state. `--top N` items listed (default 20).
+- Items in flows.json `backlogSprints` are left out (`parkedLeftOut` counts them) unless `--includeParked`.
+- Output: `open`, `inFinishedSprints` (open items sitting in a sprint already over — left behind), `daysInState` summary, `distribution` (`0-7`, `8-14`, `15-30`, `31-90`, `91+` days), `items[]` (`sprint`, `sprintOver`, `ageDays`, `daysInState`, `daysSinceChange`), longest wait first.
 
 ---
 

@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { FieldType } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { MetadataService } from '../../services/MetadataService';
 import { globalOptions, runService } from '../command';
 
@@ -31,6 +32,26 @@ const types = defineCommand({
   },
 });
 
+const fields = defineCommand({
+  meta: { name: 'fields', description: 'List the fields of the project — the names --fields, --where and --groupBy take' },
+  args: {
+    ...globalOptions,
+    search: { type: 'string', description: 'Only fields whose name or reference name contains this text' },
+    raw: { type: 'boolean', description: 'Return the full raw fields' },
+  },
+  async run({ args }) {
+    await runService(MetadataService, args, async (svc) => {
+      const all = await svc.getFields();
+      const wanted = args.search?.toLowerCase();
+      const result = wanted
+        ? all.filter(f => `${f.name} ${f.referenceName}`.toLowerCase().includes(wanted))
+        : all;
+      if (args.raw) return result;
+      return result.map(f => ({ referenceName: f.referenceName, name: f.name, type: FieldType[f.type] ?? f.type }));
+    });
+  },
+});
+
 const tags = defineCommand({
   meta: { name: 'tags', description: 'List tags defined in the project' },
   args: {
@@ -46,9 +67,10 @@ const tags = defineCommand({
 });
 
 export default defineCommand({
-  meta: { name: 'metadata', description: 'Project metadata commands (work item types, tags)' },
+  meta: { name: 'metadata', description: 'Project metadata commands (work item types, fields, tags)' },
   subCommands: {
     types,
+    fields,
     tags,
   },
 });

@@ -42,8 +42,13 @@ export function loadFlows(): FlowsFile {
   process.exit(2);
 }
 
+/** The flows file, or null when it does not exist — for commands that only read its settings. */
+export function loadOptionalFlows(): FlowsFile | null {
+  const raw = readFlowsFile();
+  return raw === null ? null : validOrExit(raw);
+}
+
 /** `operationalTypes` from the flows file, or none when the file does not exist. */
 export function loadOperationalTypes(): string[] {
-  const raw = readFlowsFile();
-  return raw === null ? [] : validOrExit(raw).operationalTypes ?? [];
+  return loadOptionalFlows()?.operationalTypes ?? [];
 }
