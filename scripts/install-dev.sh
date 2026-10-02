@@ -27,7 +27,18 @@ mkdir -p "$INSTALL_DIR"
 cp "$SRC" "$INSTALL_DIR/$BINARY_NAME"
 chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
-echo "Installed: $INSTALL_DIR/$BINARY_NAME"
+# macOS kills a binary whose ad-hoc signature does not verify — exit 137, no output.
+if [[ "$OS" == "Darwin" ]] && ! codesign --verify --strict "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
+  echo "Signature did not verify; re-signing ad-hoc."
+  codesign --force --sign - "$INSTALL_DIR/$BINARY_NAME"
+fi
+
+if ! "$INSTALL_DIR/$BINARY_NAME" --version >/dev/null 2>&1; then
+  echo "Installed binary does not run: $INSTALL_DIR/$BINARY_NAME" >&2
+  exit 1
+fi
+
+echo "Installed: $INSTALL_DIR/$BINARY_NAME ($("$INSTALL_DIR/$BINARY_NAME" --version))"
 
 if ! echo ":${PATH}:" | grep -q ":${INSTALL_DIR}:"; then
   echo ""
