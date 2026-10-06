@@ -99,6 +99,15 @@ Field names (`--fields`, `--groupBy`, `--orderBy`, `[…]` in `--where`): aliase
 - `--sprint` only that sprint. `--path` full iteration path instead (not both).
 - `--state` exact state. `--open` exclude finished states. `--top N` max rows (default 100).
 
+### workitem inbox
+
+`azdev workitem inbox [--since <when>] [--peek]` — what reached me since the last check (cards others changed, cards taken from me, mentions), then moves the last check to now. The last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`).
+
+- `--since` look back from `7d`, `2w`, `today`, `yesterday` or `YYYY-MM-DD` instead of the last check. The first check looks back `1d`.
+- `--peek` leave the last check where it is.
+
+Output: `since` (start of the window); `assigned[]` — cards assigned to me that someone else changed in the window, read from each card's history, so a later change of mine does not hide theirs: id, type, state, title, `ChangedBy` (everyone else who changed it, latest first), `ChangedDate` (the latest of their changes), `change` (`new` when created in the window, else `changed`), `url`; `removed[]` — cards someone else took from me in the window (reassigned or left with no assignee; not the ones I handed over), from each card's history: id, type, state, title, `AssignedTo` (now; empty when nobody), `RemovedBy`, `RemovedDate` (the latest time it left me), `url`; `mentions[]` — comments made in the window that mention me, not my own, newest first: card `id`, `Title`, `author`, `date`, `text`, `url`. A mention is found by my identity id in the comment, in HTML or Markdown. Mentions are looked up among the cards the `@RecentMentions` WIQL macro returns (last 30 days).
+
 ### workitem search
 
 `azdev workitem search <query> [--top N]` — text in title or description, newest first. `--top N` max rows.
@@ -365,7 +374,7 @@ Numbers over time. Every stats command takes `--mine`, `--assignedTo <user>`, `-
 
 ### config paths
 
-`azdev config paths` — `config`, `flows`, `conventions`, `templates` (the directory), each with `path` and `exists`.
+`azdev config paths` — `config`, `flows`, `conventions`, `templates` (the directory), `inbox` (last check of `workitem inbox`), each with `path` and `exists`.
 
 ### config get
 

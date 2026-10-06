@@ -3,6 +3,7 @@ import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi";
 import type { WorkApi } from "azure-devops-node-api/WorkApi";
 import { WorkItemErrorPolicy } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces";
 import type { TreeStructureGroup } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces";
+import type { ConnectionData } from "azure-devops-node-api/interfaces/LocationsInterfaces";
 import type { AzureDevOpsConfig } from "../interfaces/AzureDevOps";
 import {
   getPersonalAccessTokenHandler,
@@ -35,7 +36,7 @@ export class AzureDevOpsService {
   protected connection: azdev.WebApi;
   protected config: AzureDevOpsConfig;
   protected authHandler: IRequestHandler | undefined;
-  private currentUserPromise?: Promise<string>;
+  private connectionDataPromise?: Promise<ConnectionData>;
   private iterationsPromise?: Promise<SlimIterationNode[]>;
   private fieldsPromise?: Promise<FieldDefinition[]>;
 
@@ -146,15 +147,24 @@ export class AzureDevOpsService {
     return `${this.config.orgUrl}/${encodeURIComponent(this.config.project)}/_workitems/edit/${id}`;
   }
 
+  private authenticatedUser() {
+    this.connectionDataPromise ??= this.connection.connect();
+    return this.connectionDataPromise.then(data => data.authenticatedUser);
+  }
+
   /** Account (e-mail) of the authenticated user — what `@me` stands for in assignments. */
-  protected currentUser(): Promise<string> {
-    this.currentUserPromise ??= this.connection.connect().then(data => {
-      const user = data.authenticatedUser;
-      const account = user?.properties?.Account?.$value ?? user?.providerDisplayName;
-      if (!account) throw new Error('Could not resolve the authenticated user for @me');
-      return account as string;
-    });
-    return this.currentUserPromise;
+  protected async currentUser(): Promise<string> {
+    const user = await this.authenticatedUser();
+    const account = user?.properties?.Account?.$value ?? user?.providerDisplayName;
+    if (!account) throw new Error('Could not resolve the authenticated user for @me');
+    return account as string;
+  }
+
+  /** Identity id of the authenticated user — the GUID a mention of them carries. */
+  protected async currentUserId(): Promise<string> {
+    const user = await this.authenticatedUser();
+    if (!user?.id) throw new Error('Could not resolve the identity id of the authenticated user');
+    return user.id;
   }
 
   /** `@me` → the authenticated account; anything else passes through. */
@@ -247,18 +257,21 @@ export class AzureDevOpsService {
   }
 
   /** Runs a WIQL query and returns the ids it matched, in query order. */
-  protected async queryIds(query: string, top?: number): Promise<number[]> {
-    const result = await this.runWiql(query, top);
+  protected async queryIds(query: string, top?: number, timePrecision?: boolean): Promise<number[]> {
+    const result = await this.runWiql(query, top, timePrecision);
     return (result.workItems ?? [])
       .map(w => w.id)
       .filter((id): id is number => typeof id === 'number');
   }
 
-  /** Runs a WIQL query; past 20,000 matches (VS402337) the error asks to narrow it. */
-  protected async runWiql(query: string, top?: number) {
+  /**
+   * Runs a WIQL query; past 20,000 matches (VS402337) the error asks to narrow it.
+   * `timePrecision` compares dates to the instant instead of the day.
+   */
+  protected async runWiql(query: string, top?: number, timePrecision?: boolean) {
     const witApi = await this.getWorkItemTrackingApi();
     try {
-      return await witApi.queryByWiql({ query }, { project: this.config.project }, undefined, top);
+      return await witApi.queryByWiql({ query }, { project: this.config.project }, timePrecision, top);
     } catch (err) {
       const message = (err as Error)?.message ?? '';
       if (!/VS402337/.test(message)) throw err;

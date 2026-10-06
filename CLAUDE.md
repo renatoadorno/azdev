@@ -54,13 +54,19 @@ src/
   services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
     AzureDevOpsService.ts  — Base class: connection/auth, plus what every service shares:
                              resolveIteration (--sprint), currentUser/resolveAssignee (@me),
-                             hydrate (batch getWorkItems), queryIds (WIQL → ids), webUrl,
+                             currentUserId (identity GUID a mention carries),
+                             hydrate (batch getWorkItems), queryIds (WIQL → ids; timePrecision
+                             compares dates to the instant), webUrl,
                              resolveFieldNames (aliases; getFields only for unknown names)
     EntraAuthHandler.ts    — Singleton IRequestHandler using DefaultAzureCredential (Entra/OIDC)
     WorkItemService.ts     — CRUD + queries; buildCreateRequest (parent/tags/sprint in one
                              request, also used by --dryRun), markdown comments, state hints,
                              buildQuery/queryWorkItems (`workitem query`)
     WorkItemViewService.ts — view (one-call context) and attachments (list/download)
+    InboxService.ts        — `workitem inbox` since an instant: my cards others changed and
+                             cards others took from me (AssignedTo EVER @me), both decided by
+                             each card's revisions walked back from System.Rev; comments
+                             mentioning me (@RecentMentions candidates, comments paged)
     FlowService.ts         — flow status/apply over FlowsFile
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
                              cycle time, aging; past board states through WIQL ASOF
@@ -72,6 +78,9 @@ src/
     flowRules.ts     — flows.json validation, card matching, audit, apply plan
     sprintSummary.ts — delivery grouped by story
     history.ts       — revisions → field-change timeline
+    inbox.ts         — inbox window (--since / last check / 1d), its WIQL, changes by others
+                       and removals from me read off revisions, mention matching (HTML
+                       data-vss-mention or Markdown @<id>), new vs changed
     descriptionTemplates.ts — template fill + checkDescription (a template is a model:
                               missing, untouched or leftover <…> prompts are refused)
     fieldNames.ts    — field aliases and name → reference name resolution
@@ -89,6 +98,7 @@ src/
     flows.ts        — flowsPath() (next to config.json) / loadFlows() (exit 2 when missing/invalid)
     templates.ts    — templates/ next to config.json: loadTemplates(), chooseTemplate() (type
                       default, --template, --noTemplate), readCardDescriptions() for flow apply
+    inboxState.ts   — inbox.json next to config.json: last check per project (read/save)
     errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
     parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
@@ -96,7 +106,7 @@ src/
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     statsArgs.ts    — filter flags every stats command shares (--mine/--assignedTo/--type/--product)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 20 subcommands
+      workitem.ts   — 21 subcommands
       sprint.ts     — 7 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands

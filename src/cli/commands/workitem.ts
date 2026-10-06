@@ -5,12 +5,15 @@ import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces
 import { WorkItemService } from '../../services/WorkItemService';
 import { WorkItemViewService } from '../../services/WorkItemViewService';
 import { StatsService } from '../../services/StatsService';
+import { InboxService } from '../../services/InboxService';
 import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../../services/history';
+import { FIRST_CHECK_WINDOW, resolveSince } from '../../services/inbox';
 import { attachmentFileName } from '../../services/richText';
 import { slimWorkItem } from '../../services/workItemUtils';
 import { globalOptions, runCommand, runService } from '../command';
 import { format } from '../formatters/index';
 import { chooseTemplate, loadTemplates, requireTemplate } from '../templates';
+import { readLastCheck, saveLastCheck } from '../inboxState';
 import { fillTemplate, headings, needsParentTitle } from '../../services/descriptionTemplates';
 import {
   failUsage,
@@ -329,6 +332,27 @@ const mine = defineCommand({
   },
 });
 
+const inbox = defineCommand({
+  meta: {
+    name: 'inbox',
+    description: 'What reached you since the last check: cards assigned to you that someone else created or changed, cards someone else took from you, and comments that mention you',
+  },
+  args: {
+    ...globalOptions,
+    since: { type: 'string', description: `Look back from here instead of the last check: 7d, 2w, today, yesterday or YYYY-MM-DD (first check: ${FIRST_CHECK_WINDOW})` },
+    peek: { type: 'boolean', description: 'Leave the last-check time where it is' },
+  },
+  async run({ args }) {
+    // Taken before the queries, so whatever happens while they run shows up next time.
+    const checkedAt = new Date();
+    await runService(InboxService, args, async (svc) => {
+      const result = await svc.inbox({ since: resolveSince(args.since, readLastCheck(svc.project), checkedAt) });
+      if (!args.peek) saveLastCheck(svc.project, checkedAt);
+      return result;
+    });
+  },
+});
+
 const create = defineCommand({
   meta: { name: 'create', description: 'Create a work item — parent, tags and sprint in one call' },
   args: {
@@ -544,6 +568,7 @@ export default defineCommand({
     search,
     recent,
     mine,
+    inbox,
     create,
     update,
     comment,
