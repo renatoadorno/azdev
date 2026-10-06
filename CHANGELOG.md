@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-06
+
+Follow a story whose cards are other people's. 0.7.0 had no release of its own:
+its `workitem inbox` ships in this one.
+
+### Added
+
+- `workitem watch [<id>] [--remove] [--archived]`: follow a card besides your own —
+  a story whose review, tests and publication cards belong to other people. The
+  list is kept per project in `watch.json`, next to `config.json`; a malformed file
+  exits `1` and is never overwritten.
+- `workitem inbox` lists `watched[]`, the watched cards and their direct children
+  that someone else changed (read from each card's history, never repeating
+  `assigned` or `removed`), and `closed[]`, the watched cards finished together
+  with every direct child, by state category. A check moves those to the archive
+  (`watch --archived`); a story done while its review or publication is still open
+  stays watched. `--peek` leaves the watch list as it is.
+- `flow apply` (without `--dryRun`) watches its story.
+- `config paths` reports `watch.json`.
+
 ## [0.7.0] - 2026-10-06
 
 An inbox of what reached you on the board since the last check.
@@ -266,8 +286,9 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/renatoadorno/azdev/compare/v0.6.0...v0.7.0
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/renatoadorno/azdev/compare/v0.6.0...v0.8.0
+[0.7.0]: https://github.com/renatoadorno/azdev/pull/4
 [0.6.0]: https://github.com/renatoadorno/azdev/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/renatoadorno/azdev/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/renatoadorno/azdev/compare/v0.5.1...v0.5.2

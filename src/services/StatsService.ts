@@ -16,9 +16,7 @@ import {
   boardHabits,
   breakdown,
   bucketCondition,
-  bucketOf,
   carriedIn,
-  categoriesFrom,
   closedSinceCondition,
   deliveredAt,
   distribution,
@@ -38,7 +36,6 @@ import {
   weeklyThroughput,
   workingDays,
   type Bucket,
-  type StateCategories,
 } from './stats';
 import { HIERARCHY_FORWARD, wiqlEscape, type WorkItemRow as Row } from './workItemUtils';
 
@@ -108,27 +105,10 @@ function brief(row: Row): Row {
 }
 
 export class StatsService extends AzureDevOpsService {
-  private categoriesPromise?: Promise<{ categories: StateCategories; typeNames: Map<string, string> }>;
   private sprintsPromise?: Promise<TeamSprint[]>;
 
   constructor(config: AzureDevOpsConfig) {
     super(config);
-  }
-
-  /** State categories of every type — what "done" means for a custom state like `staging`. */
-  private stateCategories(): Promise<{ categories: StateCategories; typeNames: Map<string, string> }> {
-    this.categoriesPromise ??= this.getWorkItemTrackingApi()
-      .then(witApi => witApi.getWorkItemTypes(this.config.project))
-      .then(types => ({
-        categories: categoriesFrom(types ?? []),
-        typeNames: new Map((types ?? []).filter(t => t.name).map(t => [t.name!.toLowerCase(), t.name!])),
-      }));
-    return this.categoriesPromise;
-  }
-
-  private async bucketFn(): Promise<(row: Row) => Bucket> {
-    const { categories } = await this.stateCategories();
-    return row => bucketOf(categories, row.WorkItemType, row.State);
   }
 
   private async inBuckets(buckets: Bucket[]): Promise<string> {

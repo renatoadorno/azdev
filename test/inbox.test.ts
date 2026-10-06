@@ -10,6 +10,7 @@ import {
   removalFromUser,
   removedWiql,
   resolveSince,
+  watchedWiql,
 } from '../src/services/inbox';
 
 const ME = '30323507-6ddd-4290-988a-3bf0e6febd4c';
@@ -49,6 +50,12 @@ describe('inbox queries', () => {
   it('asks for my cards changed since the instant by anyone — the history decides who', () => {
     expect(assignedWiql(since)).toBe(
       "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.AssignedTo] = @me AND [System.ChangedDate] >= '2026-10-06T12:00:00.000Z' ORDER BY [System.ChangedDate] DESC",
+    );
+  });
+
+  it('asks for the watched cards and their direct children changed since the instant, leaving mine to `assigned`', () => {
+    expect(watchedWiql([14547, 14600], since)).toBe(
+      "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND ([System.Id] IN (14547, 14600) OR [System.Parent] IN (14547, 14600)) AND [System.AssignedTo] <> @me AND [System.ChangedDate] >= '2026-10-06T12:00:00.000Z' ORDER BY [System.ChangedDate] DESC",
     );
   });
 

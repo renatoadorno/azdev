@@ -60,17 +60,6 @@ export class FlowService extends WorkItemService {
     return story;
   }
 
-  /** Children of several stories in one query, grouped by parent id. */
-  private async childrenOf(parentIds: number[]): Promise<Map<number, WorkItemRow[]>> {
-    const byParent = new Map<number, WorkItemRow[]>(parentIds.map(id => [id, []]));
-    if (parentIds.length === 0) return byParent;
-    const ids = await this.queryIds(
-      `SELECT [System.Id] FROM WorkItems WHERE [System.Parent] IN (${parentIds.join(', ')}) ORDER BY [System.WorkItemType], [System.Id]`,
-    );
-    for (const row of await this.hydrate(ids, AUDIT_FIELDS)) byParent.get(row.Parent as number)?.push(row);
-    return byParent;
-  }
-
   /** Newest comment date of the closed cards whose freshness is audited. */
   private async lastComments(flow: FlowDefinition, children: WorkItemRow[]): Promise<Map<number, string | undefined>> {
     const ids = children
@@ -104,7 +93,7 @@ export class FlowService extends WorkItemService {
   ): Promise<Record<string, unknown>> {
     const story = await this.story(params.parentId);
     const [name, flow] = pickFlow(file, String(story.WorkItemType), params.flow);
-    const children = (await this.childrenOf([params.parentId])).get(params.parentId) ?? [];
+    const children = (await this.childrenOf([params.parentId], AUDIT_FIELDS)).get(params.parentId) ?? [];
     return { story: brief(story), flow: name, ...(await this.evaluate(flow, children, story, templates)) };
   }
 
@@ -139,7 +128,7 @@ export class FlowService extends WorkItemService {
     }
 
     const stories = await this.hydrate(storyIds, STORY_FIELDS);
-    const childrenByStory = await this.childrenOf(storyIds);
+    const childrenByStory = await this.childrenOf(storyIds, AUDIT_FIELDS);
     const rows: WorkItemRow[] = [];
     const findings: Array<{ story: number; finding: string }> = [];
 
@@ -173,7 +162,7 @@ export class FlowService extends WorkItemService {
   ): Promise<Record<string, unknown>> {
     const story = await this.story(params.parentId);
     const [name, flow] = pickFlow(file, String(story.WorkItemType), params.flow);
-    const children = (await this.childrenOf([params.parentId])).get(params.parentId) ?? [];
+    const children = (await this.childrenOf([params.parentId], AUDIT_FIELDS)).get(params.parentId) ?? [];
     const storyTitle = String(story.Title);
     // A feature often spans repositories under a story whose title is not the feature's name.
     const ctx = { title: params.name?.trim() || storyTitle, id: params.parentId };

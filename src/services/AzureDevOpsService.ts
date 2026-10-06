@@ -19,8 +19,9 @@ import {
   suggestIterations,
   type SlimIterationNode,
 } from "./iterations";
-import { ME, slimWorkItem } from "./workItemUtils";
+import { ME, slimWorkItem, type WorkItemRow } from "./workItemUtils";
 import { resolveField, resolveFieldOffline, suggestFields, type FieldDefinition } from "./fieldNames";
+import { bucketOf, categoriesFrom, type Bucket, type StateCategories } from "./stats";
 
 export const CLASSIFICATION_DEPTH = 10;
 
@@ -39,6 +40,7 @@ export class AzureDevOpsService {
   private connectionDataPromise?: Promise<ConnectionData>;
   private iterationsPromise?: Promise<SlimIterationNode[]>;
   private fieldsPromise?: Promise<FieldDefinition[]>;
+  private categoriesPromise?: Promise<{ categories: StateCategories; typeNames: Map<string, string> }>;
 
   constructor(config: AzureDevOpsConfig) {
     this.config = config;
@@ -142,6 +144,11 @@ export class AzureDevOpsService {
     return await this.connection.getWorkApi();
   }
 
+  /** The project read — files kept next to config.json (last check, watch list) are per project. */
+  public get project(): string {
+    return this.config.project;
+  }
+
   /** Browser link to a work item. */
   protected webUrl(id: number): string {
     return `${this.config.orgUrl}/${encodeURIComponent(this.config.project)}/_workitems/edit/${id}`;
@@ -196,6 +203,22 @@ export class AzureDevOpsService {
       const hint = suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '';
       throw new Error(`Unknown field "${name}".${hint} List them with 'azdev metadata fields'.`);
     });
+  }
+
+  /** State categories of every type — what "done" means for a custom state like `staging`. */
+  protected stateCategories(): Promise<{ categories: StateCategories; typeNames: Map<string, string> }> {
+    this.categoriesPromise ??= this.getWorkItemTrackingApi()
+      .then(witApi => witApi.getWorkItemTypes(this.config.project))
+      .then(types => ({
+        categories: categoriesFrom(types ?? []),
+        typeNames: new Map((types ?? []).filter(t => t.name).map(t => [t.name!.toLowerCase(), t.name!])),
+      }));
+    return this.categoriesPromise;
+  }
+
+  protected async bucketFn(): Promise<(row: WorkItemRow) => Bucket> {
+    const { categories } = await this.stateCategories();
+    return row => bucketOf(categories, row.WorkItemType, row.State);
   }
 
   private projectIterations(): Promise<SlimIterationNode[]> {
@@ -254,6 +277,18 @@ export class AzureDevOpsService {
       .map(id => byId.get(id))
       .filter(Boolean)
       .map(wi => slimWorkItem(wi));
+  }
+
+  /** Direct children of several cards in one query, grouped by parent id; a parent without children maps to []. */
+  protected async childrenOf(parentIds: number[], fields: string[]): Promise<Map<number, WorkItemRow[]>> {
+    const byParent = new Map<number, WorkItemRow[]>(parentIds.map(id => [id, []]));
+    if (parentIds.length === 0) return byParent;
+    const ids = await this.queryIds(
+      `SELECT [System.Id] FROM WorkItems WHERE [System.Parent] IN (${parentIds.join(', ')}) ORDER BY [System.WorkItemType], [System.Id]`,
+    );
+    const withParent = fields.includes('System.Parent') ? fields : [...fields, 'System.Parent'];
+    for (const row of await this.hydrate(ids, withParent)) byParent.get(row.Parent as number)?.push(row);
+    return byParent;
   }
 
   /** Runs a WIQL query and returns the ids it matched, in query order. */

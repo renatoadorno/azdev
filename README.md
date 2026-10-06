@@ -15,7 +15,7 @@ Downloads the latest release for your platform (Darwin arm64 or Linux x86-64), v
 To install a specific version (the variable goes to `bash`, which runs the script):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | AZDEV_VERSION=v0.7.0 bash
+curl -fsSL https://raw.githubusercontent.com/renatoadorno/azdev/main/install.sh | AZDEV_VERSION=v0.8.0 bash
 ```
 
 Add `~/.local/bin` to your PATH if not already present:
@@ -72,7 +72,7 @@ Override the default project for any command with `--project <name>`.
 
 | Group | Subcommands | Description |
 |---|---|---|
-| `workitem` | 21 | Free `query` (filters, `--where`, WIQL, counts, groups), search, create (with parent/tags/sprint), update, comment, link; one-call `view`, comments, attachments, history timeline, story `progress`, description templates; `inbox` of what reached you since the last check |
+| `workitem` | 22 | Free `query` (filters, `--where`, WIQL, counts, groups), search, create (with parent/tags/sprint), update, comment, link; one-call `view`, comments, attachments, history timeline, story `progress`, description templates; `inbox` of what reached you since the last check, and `watch` to follow a story whose cards are other people's |
 | `sprint` | 7 | List sprints, current sprint, hydrated items, per-person summary by story, `progress` (pace, burn-up), `carryover` between sprints, capacity |
 | `board` | 5 | List boards, columns, cards; move cards between columns; team members |
 | `project` | 10 | Manage projects, areas, iterations, processes, work item types |

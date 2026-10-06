@@ -5,6 +5,8 @@ import { flowsPath, loadFlows } from '../flows';
 import { format } from '../formatters/index';
 import { failUsage, parseCsv, parseId, parseJsonObject, parseOptionalId } from '../parsers';
 import { loadTemplates, readCardDescriptions } from '../templates';
+import { updateWatch } from '../watchState';
+import { addWatch } from '../../services/watch';
 
 const parentArg = { type: 'positional' as const, description: 'Story (parent) work item ID', required: false };
 
@@ -86,8 +88,8 @@ const apply = defineCommand({
     const descriptions = args.descriptions ? readCardDescriptions(args.descriptions) : undefined;
     const titles = args.titles ? parseTitles(args.titles) : undefined;
     if (args.name !== undefined && !args.name.trim()) failUsage('--name is empty');
-    await runService(FlowService, args, (svc) =>
-      svc.applyFlow(flows, {
+    await runService(FlowService, args, async (svc) => {
+      const result = await svc.applyFlow(flows, {
         parentId,
         flow: args.flow,
         only: parseCsv(args.only),
@@ -99,8 +101,18 @@ const apply = defineCommand({
         dryRun: args.dryRun,
         descriptions,
         noTemplate: args.noTemplate,
-      }, templates),
-    );
+      }, templates);
+      if (args.dryRun) return result;
+      // The story's cycle cards go to other people; watching it brings their changes to the inbox.
+      try {
+        updateWatch(svc.project, list => addWatch(list, parentId, new Date()));
+        return { ...result, watching: true };
+      } catch (err) {
+        // The cards exist by now: a broken watch.json must not report the apply as failed.
+        console.error(`Warning: story ${parentId} was not added to the watch list: ${(err as Error).message}`);
+        return result;
+      }
+    });
   },
 });
 
