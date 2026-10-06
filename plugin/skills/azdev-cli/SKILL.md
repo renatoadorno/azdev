@@ -1,11 +1,11 @@
 ---
 name: azdev-cli
-description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; see what reached me (cards assigned to me that others changed, cards taken from me, comments that mention me); create, update, comment on, assign or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story; measure progress of a sprint or story, delivery per sprint or week, lead and cycle time, aging or work carried over between sprints; query or count cards by any field."
+description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; see what reached me (cards assigned to me that others changed, cards taken from me, changes to a story I watch and its cards, comments that mention me); create, update, comment on, assign or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story; measure progress of a sprint or story, delivery per sprint or week, lead and cycle time, aging or work carried over between sprints; query or count cards by any field."
 ---
 
 # azdev CLI
 
-`azdev` is the Azure DevOps CLI on this machine — 57 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
+`azdev` is the Azure DevOps CLI on this machine — 58 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
 
 ## Preflight
 
@@ -30,7 +30,8 @@ One call answers each of these — reach for it before composing WIQL or chainin
 - Mine, open, this sprint → `azdev sprint items --mine --open` (any sprint: `azdev sprint items 82 --mine`)
 - A sprint by type, state or person → `azdev sprint items <sprint> --type <t> | --state <s> | --assignedTo <user>`
 - Mine across sprints → `azdev workitem mine --open`
-- What reached me since the last check — cards assigned to me that someone else created or changed, cards someone took from me, comments that mention me → `azdev workitem inbox`. It moves the last check forward; `--peek` when only looking, so the user's next check still shows it.
+- What reached me since the last check — cards assigned to me that someone else created or changed, cards someone took from me, changes others made to a watched story and its cards, comments that mention me → `azdev workitem inbox`. It moves the last check forward and archives the watched stories finished with all their cards; `--peek` when only looking, so the user's next check still shows it.
+- Follow a story whose cards are other people's (review, tests, publication) → `azdev workitem watch <id>`; no id lists them, `--remove` stops, `--archived` lists the finished ones. `flow apply` watches its story by itself.
 - Text search → `azdev workitem search "<text>"`
 - Any other question about cards — filters, counts, groups → `azdev workitem query` with `--type a,b`, `--state`, `--sprint`, `--assignedTo`, `--tags`, `--text`, `--parent`, `--changedSince 7d`, `--closedSince 2026-09-01` and a free `--where "[priority] = 1"`; `--count` or `--groupBy state,assignedTo` for numbers, `--fields` for columns. `--printWiql` shows the query built; a whole WIQL query goes in `--wiql`. Field names: `azdev metadata fields --search <text>`.
 

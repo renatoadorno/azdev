@@ -101,12 +101,21 @@ Field names (`--fields`, `--groupBy`, `--orderBy`, `[…]` in `--where`): aliase
 
 ### workitem inbox
 
-`azdev workitem inbox [--since <when>] [--peek]` — what reached me since the last check (cards others changed, cards taken from me, mentions), then moves the last check to now. The last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`).
+`azdev workitem inbox [--since <when>] [--peek]` — what reached me since the last check (cards others changed, cards taken from me, watched cards, mentions), then moves the last check to now and archives the watched cards that finished. The last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`).
 
 - `--since` look back from `7d`, `2w`, `today`, `yesterday` or `YYYY-MM-DD` instead of the last check. The first check looks back `1d`.
-- `--peek` leave the last check where it is.
+- `--peek` leave the last check and the watch list where they are.
 
-Output: `since` (start of the window); `assigned[]` — cards assigned to me that someone else changed in the window, read from each card's history, so a later change of mine does not hide theirs: id, type, state, title, `ChangedBy` (everyone else who changed it, latest first), `ChangedDate` (the latest of their changes), `change` (`new` when created in the window, else `changed`), `url`; `removed[]` — cards someone else took from me in the window (reassigned or left with no assignee; not the ones I handed over), from each card's history: id, type, state, title, `AssignedTo` (now; empty when nobody), `RemovedBy`, `RemovedDate` (the latest time it left me), `url`; `mentions[]` — comments made in the window that mention me, not my own, newest first: card `id`, `Title`, `author`, `date`, `text`, `url`. A mention is found by my identity id in the comment, in HTML or Markdown. Mentions are looked up among the cards the `@RecentMentions` WIQL macro returns (last 30 days).
+Output: `since` (start of the window); `assigned[]` — cards assigned to me that someone else changed in the window, read from each card's history, so a later change of mine does not hide theirs: id, type, state, title, `ChangedBy` (everyone else who changed it, latest first), `ChangedDate` (the latest of their changes), `change` (`new` when created in the window, else `changed`), `url`; `removed[]` — cards someone else took from me in the window (reassigned or left with no assignee; not the ones I handed over), from each card's history: id, type, state, title, `AssignedTo` (now; empty when nobody), `RemovedBy`, `RemovedDate` (the latest time it left me), `url`; `watched[]` — the watched cards (`workitem watch`) and their direct children, not assigned to me, that someone else changed in the window, read from each card's history: id, `Watched` (the watched card it belongs to), type, state, title, `AssignedTo`, `ChangedBy`, `ChangedDate`, `change`, `url` — a card already in `assigned` or `removed` is not repeated; `closed[]` — watched cards finished: done or removed by state category (a custom state counts by its category), **and so is every direct child** — a story whose review or publication card is still open stays watched: id, type, state, title, `url`. A check without `--peek` moves them to the archive (`workitem watch --archived`); `mentions[]` — comments made in the window that mention me, not my own, newest first: card `id`, `Title`, `author`, `date`, `text`, `url`. A mention is found by my identity id in the comment, in HTML or Markdown. Mentions are looked up among the cards the `@RecentMentions` WIQL macro returns (last 30 days).
+
+### workitem watch
+
+`azdev workitem watch [<id>] [--remove] [--archived]` — follow a card besides my own cards: the inbox lists the changes others make to it and to its direct children (a story whose review, tests and publication cards are other people's). Prints the watch list after the change. The list is kept per project in `watch.json`, next to `config.json`; a malformed file exits `1` and is left untouched.
+
+- `<id>` start watching it (a card that does not exist exits `1`); watching an archived card brings it back. No id lists the watched cards: id, type, state, title, `AssignedTo`, `since` (when watching started), `url`.
+- `--remove` stop watching the card given (also drops it from the archive); a card not watched exits `1`.
+- `--archived` list the archive instead — watched cards that finished with all their children, which `workitem inbox` moved there; rows add `archivedAt`.
+- `flow apply` (without `--dryRun`) watches its story by itself.
 
 ### workitem search
 
@@ -244,6 +253,7 @@ Driven by `flows.json` (path: `azdev config paths`). A missing or invalid file e
 - `--name "<feature>"` fills `{title}` in the cards' titles (and inline descriptions) with the feature's name instead of the story's title — a feature spanning repositories under a story named otherwise. `{parentTitle}` in templates stays the story's title. The output echoes `name`.
 - `--titles '{"pub-prod":"Deploy API + app [PROD]"}'` whole titles by card key (`{title}`/`{id}` allowed). A title must still match its card's `match`, or the row is a `conflict` and the card is not created; an unknown key or an empty title exits before anything is created; a title for a card that already exists or is skipped is not applied and comes back in `warnings`.
 - `--dryRun` the plan without creating — run it first to see which templates to write. An unknown key exits `1` before anything is created.
+- Without `--dryRun` the story is added to the watch list (`workitem watch`) and the output carries `watching: true`, so the inbox brings the changes others make to its cards.
 
 ### flow list
 
@@ -374,7 +384,7 @@ Numbers over time. Every stats command takes `--mine`, `--assignedTo <user>`, `-
 
 ### config paths
 
-`azdev config paths` — `config`, `flows`, `conventions`, `templates` (the directory), `inbox` (last check of `workitem inbox`), each with `path` and `exists`.
+`azdev config paths` — `config`, `flows`, `conventions`, `templates` (the directory), `inbox` (last check of `workitem inbox`), `watch` (cards followed by `workitem watch`), each with `path` and `exists`.
 
 ### config get
 

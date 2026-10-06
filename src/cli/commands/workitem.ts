@@ -14,6 +14,8 @@ import { globalOptions, runCommand, runService } from '../command';
 import { format } from '../formatters/index';
 import { chooseTemplate, loadTemplates, requireTemplate } from '../templates';
 import { readLastCheck, saveLastCheck } from '../inboxState';
+import { readWatch, updateWatch } from '../watchState';
+import { addWatch, archiveWatch, removeWatch, watchedIds } from '../../services/watch';
 import { fillTemplate, headings, needsParentTitle } from '../../services/descriptionTemplates';
 import {
   failUsage,
@@ -346,9 +348,44 @@ const inbox = defineCommand({
     // Taken before the queries, so whatever happens while they run shows up next time.
     const checkedAt = new Date();
     await runService(InboxService, args, async (svc) => {
-      const result = await svc.inbox({ since: resolveSince(args.since, readLastCheck(svc.project), checkedAt) });
-      if (!args.peek) saveLastCheck(svc.project, checkedAt);
+      const since = resolveSince(args.since, readLastCheck(svc.project), checkedAt);
+      const result = await svc.inbox({ since, watched: watchedIds(readWatch(svc.project)) });
+      if (!args.peek) {
+        saveLastCheck(svc.project, checkedAt);
+        const closed = result.closed.map(card => card.id as number);
+        if (closed.length) updateWatch(svc.project, list => archiveWatch(list, closed, checkedAt));
+      }
       return result;
+    });
+  },
+});
+
+const watch = defineCommand({
+  meta: {
+    name: 'watch',
+    description: "Follow a card and its direct children in the inbox besides your own — a story whose cycle cards are other people's. No ID lists the watched cards",
+  },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Work item ID to watch', required: false },
+    remove: { type: 'boolean', description: 'Stop watching the card (also drops it from the archive)' },
+    archived: { type: 'boolean', description: 'List the archive instead: watched cards that closed, which the inbox moves there' },
+  },
+  async run({ args }) {
+    const id = parseOptionalId(args.id, 'work item ID');
+    if (args.remove && id === undefined) failUsage('--remove needs the work item ID');
+    if (args.archived && id !== undefined) failUsage('--archived lists the archive; pass no ID');
+    await runService(InboxService, args, async (svc) => {
+      if (id !== undefined && args.remove) {
+        const { watching, archived } = readWatch(svc.project);
+        if (![...watching, ...archived].some(entry => entry.id === id)) throw new Error(`Work item ${id} is not watched`);
+        updateWatch(svc.project, list => removeWatch(list, id));
+      } else if (id !== undefined) {
+        await svc.requireCard(id);
+        updateWatch(svc.project, list => addWatch(list, id, new Date()));
+      }
+      const list = readWatch(svc.project);
+      return svc.watchRows(args.archived ? list.archived : list.watching);
     });
   },
 });
@@ -569,6 +606,7 @@ export default defineCommand({
     recent,
     mine,
     inbox,
+    watch,
     create,
     update,
     comment,

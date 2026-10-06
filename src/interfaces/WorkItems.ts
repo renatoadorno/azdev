@@ -138,6 +138,8 @@ export interface QueryWorkItemsParams {
 export interface InboxParams {
   /** Start of the window: the last check, or the `--since` given. */
   since: Date;
+  /** Cards followed besides my own (`workitem watch`), with their direct children. */
+  watched?: number[];
 }
 
 /**

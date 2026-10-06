@@ -106,7 +106,7 @@ describe('configPath', () => {
 });
 
 describe('configFiles', () => {
-  it('places flows.json, conventions.md, templates/ and inbox.json next to config.json and reports which exist', () => {
+  it('places flows.json, conventions.md, templates/, inbox.json and watch.json next to config.json and reports which exist', () => {
     const file = useConfig(base);
     const dir = file.slice(0, file.lastIndexOf('/'));
     fs.writeFileSync(`${dir}/conventions.md`, '# team');
@@ -117,6 +117,7 @@ describe('configFiles', () => {
       conventions: { path: `${dir}/conventions.md`, exists: true },
       templates: { path: `${dir}/templates`, exists: false },
       inbox: { path: `${dir}/inbox.json`, exists: false },
+      watch: { path: `${dir}/watch.json`, exists: false },
     });
   });
 });

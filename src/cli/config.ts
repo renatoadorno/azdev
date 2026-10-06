@@ -28,7 +28,7 @@ export function siblingPath(fileName: string): string {
 }
 
 /** The per-user files azdev and its Claude Code skills read, and whether each exists. */
-export function configFiles(): Record<'config' | 'flows' | 'conventions' | 'templates' | 'inbox', { path: string; exists: boolean }> {
+export function configFiles(): Record<'config' | 'flows' | 'conventions' | 'templates' | 'inbox' | 'watch', { path: string; exists: boolean }> {
   const entry = (file: string) => ({ path: file, exists: fs.existsSync(file) });
   return {
     config: entry(configPath()),
@@ -36,6 +36,7 @@ export function configFiles(): Record<'config' | 'flows' | 'conventions' | 'temp
     conventions: entry(siblingPath('conventions.md')),
     templates: entry(siblingPath('templates')),
     inbox: entry(siblingPath('inbox.json')),
+    watch: entry(siblingPath('watch.json')),
   };
 }
 

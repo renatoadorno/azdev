@@ -36,6 +36,15 @@ export function removedWiql(since: Date): string {
   return buildWiql(['[System.AssignedTo] EVER @me', '[System.AssignedTo] <> @me', changedSince(since)]);
 }
 
+/**
+ * Watched cards and their direct children that changed since `since`. Cards of mine are
+ * left out: they already show up in `assigned`; `<>` keeps the ones with no assignee.
+ */
+export function watchedWiql(ids: number[], since: Date): string {
+  const list = ids.join(', ');
+  return buildWiql([`([System.Id] IN (${list}) OR [System.Parent] IN (${list}))`, '[System.AssignedTo] <> @me', changedSince(since)]);
+}
+
 interface Revision {
   fields?: Record<string, unknown>;
 }

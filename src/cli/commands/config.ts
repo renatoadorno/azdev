@@ -60,7 +60,7 @@ const get = defineCommand({
 });
 
 const paths = defineCommand({
-  meta: { name: 'paths', description: 'Show where config.json and the files next to it (flows.json, conventions.md, templates/, inbox.json) live, and whether each exists' },
+  meta: { name: 'paths', description: 'Show where config.json and the files next to it (flows.json, conventions.md, templates/, inbox.json, watch.json) live, and whether each exists' },
   args: { ...outputOptions },
   async run({ args }) {
     await runCommand(async () => {
