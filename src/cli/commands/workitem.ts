@@ -335,7 +335,7 @@ const mine = defineCommand({
 const inbox = defineCommand({
   meta: {
     name: 'inbox',
-    description: 'What reached you since the last check: cards assigned to you that someone else created or changed, and comments that mention you',
+    description: 'What reached you since the last check: cards assigned to you that someone else created or changed, cards someone else took from you, and comments that mention you',
   },
   args: {
     ...globalOptions,
