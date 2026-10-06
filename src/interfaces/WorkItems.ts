@@ -133,6 +133,14 @@ export interface QueryWorkItemsParams {
 }
 
 /**
+ * Interface for what reached the authenticated user since a point in time
+ */
+export interface InboxParams {
+  /** Start of the window: the last check, or the `--since` given. */
+  since: Date;
+}
+
+/**
  * Interface for recently updated work items
  */
 export interface RecentWorkItemsParams {
