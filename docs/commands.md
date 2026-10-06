@@ -359,7 +359,7 @@ azdev workitem mine --state Active
 
 ### `workitem inbox`
 
-What reached you since the last check: cards assigned to you that someone else changed (a card created for you counts), cards someone else took from you, and comments that mention you. Each card's history is read, so a change of yours after a colleague's does not hide theirs, and a card no longer in your name still shows up. Each run moves the last check to the moment it started; the last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`). The first check looks back one day.
+What reached you since the last check: cards assigned to you that someone else changed (a card created for you counts), cards someone else took from you, changes others made to the cards you watch ([`workitem watch`](#workitem-watch)) and their children, and comments that mention you. Each card's history is read, so a change of yours after a colleague's does not hide theirs, and a card no longer in your name still shows up. Each run moves the last check to the moment it started and archives the watched cards that finished; the last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`). The first check looks back one day.
 
 ```
 azdev workitem inbox [--since <when>] [--peek]
@@ -368,12 +368,14 @@ azdev workitem inbox [--since <when>] [--peek]
 | Option | Type | Description |
 |---|---|---|
 | `--since` | string | Look back from `7d`, `2w`, `today`, `yesterday` or `YYYY-MM-DD` instead of the last check |
-| `--peek` | boolean | Leave the last check where it is |
+| `--peek` | boolean | Leave the last check and the watch list where they are |
 
 Output:
 - `since` — start of the window.
 - `assigned[]` — id, type, state, title, `ChangedBy` (everyone else who changed it in the window, latest first), `ChangedDate` (the latest of their changes), `change` (`new` when the card was created in the window, else `changed`) and `url`.
 - `removed[]` — cards someone else reassigned or left with no assignee in the window (the ones you handed over yourself are left out): id, type, state, title, `AssignedTo` (where it is now; empty when nobody), `RemovedBy`, `RemovedDate` (the latest time it left you) and `url`.
+- `watched[]` — the watched cards and their direct children, not assigned to you, that someone else changed in the window: id, `Watched` (the watched card it belongs to), type, state, title, `AssignedTo`, `ChangedBy`, `ChangedDate`, `change` and `url`. A card already in `assigned` or `removed` is not repeated.
+- `closed[]` — watched cards that finished: done or removed by state category (a custom state such as `published` counts by its category), **and so is every direct child**. A story that looks done while its review or publication card is still open stays watched. A check without `--peek` moves these to the archive: id, type, state, title and `url`.
 - `mentions[]` — one row per comment that mentions you, newest first, leaving out your own: card `id`, `Title`, `author`, `date`, `text` and `url`.
 
 A mention is your identity id inside the comment (`data-vss-mention` in HTML, `@<id>` in Markdown). The cards searched are the ones the `@RecentMentions` WIQL macro returns, which covers the last 30 days.
@@ -383,6 +385,33 @@ A mention is your identity id inside the comment (`data-vss-mention` in HTML, `@
 ```bash
 azdev workitem inbox
 azdev workitem inbox --since 7d --peek
+```
+
+---
+
+### `workitem watch`
+
+Follow a card besides your own: `workitem inbox` lists the changes others make to it and to its direct children. Made for a story whose review, tests and publication cards are other people's. Prints the watch list after the change. The list is kept per project in `watch.json`, next to `config.json`; a malformed file exits `1` and is left untouched, so the next save never overwrites it. `flow apply` watches its story by itself.
+
+```
+azdev workitem watch [<id>] [--remove] [--archived]
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `<id>` | positional | Card to watch; a card that does not exist exits `1`, and an archived one comes back to the list. No id lists the watched cards |
+| `--remove` | boolean | Stop watching the card given; also drops it from the archive. A card not watched exits `1` |
+| `--archived` | boolean | List the archive instead: watched cards that finished with all their children, moved there by `workitem inbox` |
+
+Rows: id, type, state, title, `AssignedTo`, `since` (when watching started), `url`; the archive adds `archivedAt`.
+
+**Examples:**
+
+```bash
+azdev workitem watch 14547
+azdev workitem watch
+azdev workitem watch 14547 --remove
+azdev workitem watch --archived
 ```
 
 ---
@@ -1268,6 +1297,8 @@ A card that has a model (template file or inline `description`) needs its `<key>
 
 An unknown card key exits `1` before anything is created. Each row reports `key`, `action`, `ids`, `type`, `title`, `assignedTo`, `state`, `sprint`.
 
+Without `--dryRun` the story is added to the watch list ([`workitem watch`](#workitem-watch)) and the output carries `watching: true`: its review, tests and publication cards usually go to other people, and the inbox brings the changes they make.
+
 A card whose title, rendered with the story's real title, would count as another card (a story named `… [HOMOLOG]` makes `{title} [PROD]` match the homolog pattern) is reported as `conflict` and not created — creating it would break idempotency. The reasons are listed under `conflicts`; tighten the other card's `match`.
 
 **Examples:**
@@ -1416,7 +1447,7 @@ azdev config get project
 
 ### `config paths`
 
-Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`), `conventions` (`conventions.md`, read by the Claude Code plugin's skills), `templates` (the description templates directory) and `inbox` (`inbox.json`, the last check of `workitem inbox`). All sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
+Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`), `conventions` (`conventions.md`, read by the Claude Code plugin's skills), `templates` (the description templates directory), `inbox` (`inbox.json`, the last check of `workitem inbox`) and `watch` (`watch.json`, the cards followed by `workitem watch`). All sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
 
 ```
 azdev config paths

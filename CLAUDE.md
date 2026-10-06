@@ -56,7 +56,9 @@ src/
                              resolveIteration (--sprint), currentUser/resolveAssignee (@me),
                              currentUserId (identity GUID a mention carries),
                              hydrate (batch getWorkItems), queryIds (WIQL → ids; timePrecision
-                             compares dates to the instant), webUrl,
+                             compares dates to the instant), childrenOf (direct children by
+                             parent), stateCategories/bucketFn (done/removed by state
+                             category, so custom states count), project, webUrl,
                              resolveFieldNames (aliases; getFields only for unknown names)
     EntraAuthHandler.ts    — Singleton IRequestHandler using DefaultAzureCredential (Entra/OIDC)
     WorkItemService.ts     — CRUD + queries; buildCreateRequest (parent/tags/sprint in one
@@ -65,8 +67,11 @@ src/
     WorkItemViewService.ts — view (one-call context) and attachments (list/download)
     InboxService.ts        — `workitem inbox` since an instant: my cards others changed and
                              cards others took from me (AssignedTo EVER @me), both decided by
-                             each card's revisions walked back from System.Rev; comments
-                             mentioning me (@RecentMentions candidates, comments paged)
+                             each card's revisions walked back from System.Rev; watched cards
+                             and their children others changed, and the watched cards
+                             finished with all their children (`closed`, archived by the
+                             CLI); comments mentioning me (@RecentMentions candidates,
+                             comments paged); watch list rows for `workitem watch`
     FlowService.ts         — flow status/apply over FlowsFile
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
                              cycle time, aging; past board states through WIQL ASOF
@@ -81,6 +86,8 @@ src/
     inbox.ts         — inbox window (--since / last check / 1d), its WIQL, changes by others
                        and removals from me read off revisions, mention matching (HTML
                        data-vss-mention or Markdown @<id>), new vs changed
+    watch.ts         — watch list per project (add / remove / archive) and watch.json
+                       parsing that throws on a malformed file instead of reading it empty
     descriptionTemplates.ts — template fill + checkDescription (a template is a model:
                               missing, untouched or leftover <…> prompts are refused)
     fieldNames.ts    — field aliases and name → reference name resolution
@@ -99,6 +106,7 @@ src/
     templates.ts    — templates/ next to config.json: loadTemplates(), chooseTemplate() (type
                       default, --template, --noTemplate), readCardDescriptions() for flow apply
     inboxState.ts   — inbox.json next to config.json: last check per project (read/save)
+    watchState.ts   — watch.json next to config.json: readWatch / updateWatch (atomic rename)
     errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
     parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
@@ -106,7 +114,7 @@ src/
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     statsArgs.ts    — filter flags every stats command shares (--mine/--assignedTo/--type/--product)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 21 subcommands
+      workitem.ts   — 22 subcommands
       sprint.ts     — 7 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands
