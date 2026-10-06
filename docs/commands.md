@@ -357,6 +357,36 @@ azdev workitem mine --state Active
 
 ---
 
+### `workitem inbox`
+
+What reached you since the last check: cards assigned to you that someone else changed (a card created for you counts), cards someone else took from you, and comments that mention you. Each card's history is read, so a change of yours after a colleague's does not hide theirs, and a card no longer in your name still shows up. Each run moves the last check to the moment it started; the last check is kept per project in `inbox.json`, next to `config.json` (`azdev config paths`). The first check looks back one day.
+
+```
+azdev workitem inbox [--since <when>] [--peek]
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `--since` | string | Look back from `7d`, `2w`, `today`, `yesterday` or `YYYY-MM-DD` instead of the last check |
+| `--peek` | boolean | Leave the last check where it is |
+
+Output:
+- `since` — start of the window.
+- `assigned[]` — id, type, state, title, `ChangedBy` (everyone else who changed it in the window, latest first), `ChangedDate` (the latest of their changes), `change` (`new` when the card was created in the window, else `changed`) and `url`.
+- `removed[]` — cards someone else reassigned or left with no assignee in the window (the ones you handed over yourself are left out): id, type, state, title, `AssignedTo` (where it is now; empty when nobody), `RemovedBy`, `RemovedDate` (the latest time it left you) and `url`.
+- `mentions[]` — one row per comment that mentions you, newest first, leaving out your own: card `id`, `Title`, `author`, `date`, `text` and `url`.
+
+A mention is your identity id inside the comment (`data-vss-mention` in HTML, `@<id>` in Markdown). The cards searched are the ones the `@RecentMentions` WIQL macro returns, which covers the last 30 days.
+
+**Examples:**
+
+```bash
+azdev workitem inbox
+azdev workitem inbox --since 7d --peek
+```
+
+---
+
 ### `workitem create`
 
 Create a new work item. Parent link, tags and sprint go in the **same request** — no follow-up `update`/`link` calls.
@@ -1386,7 +1416,7 @@ azdev config get project
 
 ### `config paths`
 
-Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`), `conventions` (`conventions.md`, read by the Claude Code plugin's skills) and `templates` (the description templates directory). All sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
+Where the per-user files live, and whether each exists: `config` (`config.json`), `flows` (`flows.json`, read by `flow` and `sprint summary`), `conventions` (`conventions.md`, read by the Claude Code plugin's skills), `templates` (the description templates directory) and `inbox` (`inbox.json`, the last check of `workitem inbox`). All sit in the same directory, so `AZDEV_CONFIG_PATH` and `XDG_CONFIG_HOME` move them together.
 
 ```
 azdev config paths
