@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-06
+
+An inbox of what reached you on the board since the last check.
+
+### Added
+
+- `workitem inbox`: since the last check, cards assigned to you that someone else
+  created or changed, cards someone else took from you (reassigned or left with no
+  assignee) and comments that mention you (HTML or Markdown). Each card's history
+  decides, so a change of yours after a colleague's does not hide theirs. The last
+  check is kept per project in `inbox.json`, next to `config.json`; `--since` sets
+  the window and `--peek` leaves the last check where it is.
+- `config paths` reports `inbox.json`.
+
 ## [0.6.0] - 2026-10-02
 
 A free query, progress and delivery numbers, and card titles of a flow set per
@@ -252,7 +266,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/renatoadorno/azdev/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/renatoadorno/azdev/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/renatoadorno/azdev/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/renatoadorno/azdev/compare/v0.5.1...v0.5.2
