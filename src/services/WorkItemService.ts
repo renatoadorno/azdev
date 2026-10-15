@@ -12,6 +12,7 @@ import type {
   CreateWorkItemParams,
   UpdateWorkItemParams,
   AddWorkItemCommentParams,
+  UpdateWorkItemCommentParams,
   UpdateWorkItemStateParams,
   AssignWorkItemParams,
   CreateLinkParams,
@@ -423,19 +424,40 @@ export class WorkItemService extends AzureDevOpsService {
     if (format !== 'markdown') {
       return witApi.addComment({ text: params.text }, this.config.project, params.id);
     }
+    return this.sendMarkdownComment(params.text, { workItemId: params.id });
+  }
 
+  /** Replace the text of a comment, with the same format rule as addWorkItemComment. */
+  public async updateWorkItemComment(params: UpdateWorkItemCommentParams): Promise<Comment> {
+    const witApi = await this.getWorkItemTrackingApi();
+    const format = params.format ?? this.config.richTextFormat;
+    const comment =
+      format === 'markdown'
+        ? await this.sendMarkdownComment(params.text, { workItemId: params.id, commentId: params.commentId })
+        : await witApi.updateComment({ text: params.text }, this.config.project, params.id, params.commentId);
+    // typed-rest-client resolves a 404 as null instead of rejecting.
+    if (!comment) throw new Error(`Comment ${params.commentId} not found on work item ${params.id}`);
+    return comment;
+  }
+
+  /** Creates the comment, or updates it when `commentId` is given. */
+  private async sendMarkdownComment(text: string, target: { workItemId: number; commentId?: number }): Promise<Comment> {
+    const witApi = await this.getWorkItemTrackingApi();
     const verData = await witApi.vsoClient.getVersioningData(
       COMMENTS_FORMAT_API_VERSION,
       'wit',
       COMMENTS_LOCATION_ID,
-      { project: this.config.project, workItemId: params.id },
+      { project: this.config.project, ...target },
       { format: 'markdown' },
     );
     const options = witApi.createRequestOptions('application/json', verData.apiVersion);
-    const res = await witApi.rest.create(verData.requestUrl!, { text: params.text }, options);
+    const res =
+      target.commentId === undefined
+        ? await witApi.rest.create(verData.requestUrl!, { text }, options)
+        : await witApi.rest.update(verData.requestUrl!, { text }, options);
     const comment: Comment = witApi.formatResponse(res.result, TypeInfo.Comment, false);
-    if (comment?.format !== CommentFormat.Markdown) {
-      console.error(`Warning: the server stored comment ${comment?.id} as HTML — line breaks may be lost.`);
+    if (comment && comment.format !== CommentFormat.Markdown) {
+      console.error(`Warning: the server stored comment ${comment.id} as HTML — line breaks may be lost.`);
     }
     return comment;
   }

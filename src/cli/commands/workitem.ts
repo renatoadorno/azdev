@@ -476,28 +476,60 @@ const update = defineCommand({
   },
 });
 
+const commentBodyArgs = {
+  text: { type: 'string' as const, description: 'Comment text' },
+  file: { type: 'string' as const, description: "Read the comment from a file ('-' = stdin)" },
+  format: {
+    type: 'string' as const,
+    description: "'markdown' keeps line breaks and #id links; 'html' is the API default (default: config richTextFormat)",
+  },
+  raw: { type: 'boolean' as const, description: 'Return the full comment object' },
+};
+
+function parseCommentBody(args: { text?: string; file?: string; format?: string }) {
+  const format = parseRichTextFormat(args.format);
+  const text = textOrFile(args.text, args.file, ['text', 'file']);
+  if (!text?.trim()) failUsage('Pass the comment with --text or --file');
+  return { text, format };
+}
+
 const comment = defineCommand({
   meta: { name: 'comment', description: 'Add a comment to a work item' },
   args: {
     ...globalOptions,
     id: { type: 'positional', description: 'Work item ID', required: true },
-    text: { type: 'string', description: 'Comment text' },
-    file: { type: 'string', description: "Read the comment from a file ('-' = stdin)" },
-    format: {
-      type: 'string',
-      description: "'markdown' keeps line breaks and #id links; 'html' is the API default (default: config richTextFormat)",
-    },
-    raw: { type: 'boolean', description: 'Return the full comment object' },
+    ...commentBodyArgs,
   },
   async run({ args }) {
     const id = parseId(args.id);
-    const richTextFormat = parseRichTextFormat(args.format);
-    const text = textOrFile(args.text, args.file, ['text', 'file']);
-    if (!text?.trim()) failUsage('Pass the comment with --text or --file');
+    const body = parseCommentBody(args);
 
     await runService(WorkItemService, args, async (svc) => {
-      const created = await svc.addWorkItemComment({ id, text, format: richTextFormat });
+      const created = await svc.addWorkItemComment({ id, ...body });
       return args.raw ? created : svc.slimComment(created, true);
+    });
+  },
+});
+
+const commentEdit = defineCommand({
+  meta: {
+    name: 'comment-edit',
+    description: 'Replace the text of a comment on a work item (only its author can edit it)',
+  },
+  args: {
+    ...globalOptions,
+    id: { type: 'positional', description: 'Work item ID', required: true },
+    commentId: { type: 'positional', description: "Comment ID (the 'id' from workitem comments)", required: true },
+    ...commentBodyArgs,
+  },
+  async run({ args }) {
+    const id = parseId(args.id);
+    const commentId = parseId(args.commentId, 'comment ID');
+    const body = parseCommentBody(args);
+
+    await runService(WorkItemService, args, async (svc) => {
+      const updated = await svc.updateWorkItemComment({ id, commentId, ...body });
+      return args.raw ? updated : svc.slimComment(updated, true);
     });
   },
 });
@@ -610,6 +642,7 @@ export default defineCommand({
     create,
     update,
     comment,
+    'comment-edit': commentEdit,
     'set-state': setState,
     assign,
     link,

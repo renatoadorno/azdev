@@ -213,6 +213,11 @@ export interface AddWorkItemCommentParams {
   format?: RichTextFormat;
 }
 
+/** Replace the text of an existing comment; only its author may. */
+export interface UpdateWorkItemCommentParams extends AddWorkItemCommentParams {
+  commentId: number;
+}
+
 /**
  * Interface for updating a work item state
  */

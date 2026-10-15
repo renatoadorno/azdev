@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `workitem comment-edit <id> <commentId> (--text | --file) [--format] [--raw]`:
+  replace the text of a comment you wrote, the id taken from `workitem comments`.
+  Markdown goes through the same comments API version as `workitem comment`; a
+  missing comment exits `1` with `Comment <commentId> not found on work item <id>`.
+
 ## [0.8.0] - 2026-10-06
 
 Follow a story whose cards are other people's. 0.7.0 had no release of its own:

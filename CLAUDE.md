@@ -114,7 +114,7 @@ src/
                       legacy url.parse() (VsoClient.js/WebApi.js, still there in v17)
     statsArgs.ts    — filter flags every stats command shares (--mine/--assignedTo/--type/--product)
     commands/       — One file per command group; each calls services directly
-      workitem.ts   — 22 subcommands
+      workitem.ts   — 23 subcommands
       sprint.ts     — 7 subcommands
       board.ts      — 5 subcommands
       project.ts    — 10 subcommands

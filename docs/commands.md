@@ -521,6 +521,34 @@ azdev workitem comment 1201 --file ./retest.md --format markdown
 
 ---
 
+### `workitem comment-edit`
+
+Replace the whole text of a comment on a work item. Only the comment's author can edit it.
+
+```
+azdev workitem comment-edit <id> <commentId> (--text <text> | --file <path>) [--format html|markdown]
+```
+
+| Argument/Option | Type | Required | Description |
+|---|---|---|---|
+| `id` | number | Yes | Work item ID |
+| `commentId` | number | Yes | Comment ID — the `id` from `workitem comments` |
+| `--text` | string | One of | New comment text |
+| `--file` | path | One of | Read the new text from a file (`-` = stdin) |
+| `--format` | `html` \| `markdown` | No | Format the new text is written in, as in `workitem comment`. Default: config `richTextFormat` |
+| `--raw` | boolean | No | Return the full comment object |
+
+A missing comment fails with `Comment <commentId> not found on work item <id>`.
+
+**Examples:**
+
+```bash
+azdev workitem comments 1201              # find the comment id
+azdev workitem comment-edit 1201 8812 --file ./retest.md --format markdown
+```
+
+---
+
 ### `workitem set-state`
 
 Update the state of a work item.

@@ -41,6 +41,10 @@ function makeService(overrides: Record<string, unknown> = {}, config: Partial<Az
       record('addComment', args);
       return { id: 9, format: CommentFormat.Html };
     },
+    updateComment: async (...args: unknown[]) => {
+      record('updateComment', args);
+      return { id: args[3], format: CommentFormat.Html };
+    },
     vsoClient: {
       getVersioningData: async (...args: unknown[]) => {
         record('getVersioningData', args);
@@ -52,6 +56,10 @@ function makeService(overrides: Record<string, unknown> = {}, config: Partial<Az
       create: async (...args: unknown[]) => {
         record('rest.create', args);
         return { result: { id: 10, format: 'markdown', text: (args[1] as { text: string }).text } };
+      },
+      update: async (...args: unknown[]) => {
+        record('rest.update', args);
+        return { result: { id: 11, format: 'markdown', text: (args[1] as { text: string }).text } };
       },
     },
     formatResponse: (data: { format: string }) => ({ ...data, format: data.format === 'markdown' ? CommentFormat.Markdown : CommentFormat.Html }),
@@ -235,6 +243,46 @@ describe('WorkItemService.addWorkItemComment', () => {
     await svc.addWorkItemComment({ id: 7, text: '<div>x</div>' });
     expect(calls.addComment![0]).toEqual([{ text: '<div>x</div>' }, 'Demo', 7]);
     expect(calls['rest.create']).toBeUndefined();
+  });
+});
+
+describe('WorkItemService.updateWorkItemComment', () => {
+  it('patches Markdown through the versioned endpoint, addressing the comment', async () => {
+    const { svc, calls } = makeService();
+    const comment = await svc.updateWorkItemComment({ id: 7, commentId: 11, text: 'linha 1\n\nlinha 2', format: 'markdown' });
+
+    expect(calls.getVersioningData![0]).toEqual([
+      '7.1-preview.4',
+      'wit',
+      '608aac0a-32e1-4493-a863-b9cf4566d257',
+      { project: 'Demo', workItemId: 7, commentId: 11 },
+      { format: 'markdown' },
+    ]);
+    expect(calls['rest.update']![0]![1]).toEqual({ text: 'linha 1\n\nlinha 2' });
+    expect(calls['rest.create']).toBeUndefined();
+    expect(calls.updateComment).toBeUndefined();
+    expect(comment.format).toBe(CommentFormat.Markdown);
+  });
+
+  it('follows the configured richTextFormat when --format is absent', async () => {
+    const { calls, svc } = makeService({}, { richTextFormat: 'markdown' });
+    await svc.updateWorkItemComment({ id: 7, commentId: 11, text: 'x' });
+    expect(calls['rest.update']).toHaveLength(1);
+  });
+
+  it('keeps the SDK HTML path by default', async () => {
+    const { svc, calls } = makeService();
+    await svc.updateWorkItemComment({ id: 7, commentId: 11, text: '<div>x</div>' });
+    expect(calls.updateComment![0]).toEqual([{ text: '<div>x</div>' }, 'Demo', 7, 11]);
+    expect(calls['rest.update']).toBeUndefined();
+  });
+
+  // typed-rest-client resolves a 404 as null instead of rejecting.
+  it('says "not found" for a missing comment instead of a TypeError', async () => {
+    const { svc } = makeService({ updateComment: async () => null });
+    await expect(svc.updateWorkItemComment({ id: 7, commentId: 999, text: 'x' })).rejects.toThrow(
+      'Comment 999 not found on work item 7',
+    );
   });
 });
 

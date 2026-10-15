@@ -159,6 +159,13 @@ Output: `since` (start of the window); `assigned[]` — cards assigned to me tha
 - `--format markdown` keeps line breaks and `#id` links; HTML (the API default) collapses `\n` into spaces. Default: config `richTextFormat`. A warning is printed if the server still stores HTML.
 - `--raw` the full comment object.
 
+### workitem comment-edit
+
+`azdev workitem comment-edit <id> <commentId> (--text <t> | --file <file>) [--format html|markdown] [--raw]` — replaces the whole text of a comment; `<commentId>` is the `id` from `workitem comments`. Only the comment's author can edit it. A missing comment fails with `Comment <commentId> not found on work item <id>`.
+
+- `--format` as in `workitem comment`: give the format the new text is written in.
+- `--raw` the full comment object.
+
 ### workitem set-state
 
 `azdev workitem set-state <id> --state <s> [--comment <t>] [--raw]` — an invalid state fails with the valid states of that item's type. `--comment` goes to the item's history.
