@@ -17,6 +17,13 @@ export function parseOptionalId(value: unknown, label: string): number | undefin
   return value === undefined || value === '' ? undefined : parseId(value, label);
 }
 
+/** Comma-separated IDs (`101,102`), duplicates dropped. */
+export function parseIds(value: unknown, label = 'work item ID'): number[] {
+  const parts = parseCsv(String(value ?? ''));
+  if (!parts) failUsage(`Missing ${label}`);
+  return [...new Set(parts.map(part => parseId(part, label)))];
+}
+
 /** Non-negative integer flag (`--top`, `--comments`). */
 export function parseCount(value: unknown, label: string): number | undefined {
   if (value === undefined || value === '') return undefined;

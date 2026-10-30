@@ -1,7 +1,7 @@
 import type { JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
-import { CommentFormat, CommentSortOrder, TypeInfo } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
-import type { Comment } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { CommentFormat, CommentSortOrder, TypeInfo, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import type { Comment, WorkItem } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import { AzureDevOpsService } from './AzureDevOpsService';
 import type {
@@ -16,6 +16,7 @@ import type {
   UpdateWorkItemStateParams,
   AssignWorkItemParams,
   CreateLinkParams,
+  MoveWorkItemsParams,
   BulkWorkItemParams,
   WorkItemHistoryParams,
   ChildWorkItemsParams,
@@ -28,12 +29,14 @@ import {
   WRITE_SUMMARY_FIELDS,
   buildFilterClauses,
   fieldOperations,
+  parentChange,
   parentRelationOperation,
   parseTags,
   shortKey,
   simplifyValue,
   slimWorkItem,
   wiqlEscape,
+  type ParentChange,
 } from './workItemUtils';
 import {
   DEFAULT_ORDER_BY,
@@ -56,6 +59,16 @@ export interface CreateRequest {
   operations: JsonPatchOperation[];
   /** Non-blocking problems with the request (sections missing from a templated description). */
   warnings: string[];
+}
+
+export interface MovePlan extends ParentChange {
+  card: WorkItem;
+}
+
+export interface MoveResult {
+  workItem: WorkItem;
+  from?: number;
+  moved: boolean;
 }
 
 export interface SlimComment {
@@ -197,6 +210,13 @@ export class WorkItemService extends AzureDevOpsService {
     });
 
     return this.hydrateQueryResult(queryResult);
+  }
+
+  protected async getWithRelations(id: number): Promise<WorkItem> {
+    const witApi = await this.getWorkItemTrackingApi();
+    const workItem = await witApi.getWorkItem(id, undefined, undefined, WorkItemExpand.Relations, this.config.project);
+    if (!workItem) throw new Error(`Work item ${id} not found`);
+    return workItem;
   }
 
   /**
@@ -587,6 +607,39 @@ export class WorkItemService extends AzureDevOpsService {
       params.sourceId,
       this.config.project
     );
+  }
+
+  /**
+   * Where each card hangs and the patch that moves it. Every card (and the new
+   * parent) is read before anything is written, so a wrong id moves nothing.
+   */
+  public async planMove(params: MoveWorkItemsParams): Promise<MovePlan[]> {
+    if (params.parentId !== undefined) await this.getWorkItemById({ id: params.parentId, fields: ['System.Id'] });
+    const plans: MovePlan[] = [];
+    for (const id of params.ids) {
+      const card = await this.getWithRelations(id);
+      plans.push({ card, ...parentChange(card, this.config.orgUrl, params.parentId) });
+    }
+    return plans;
+  }
+
+  /**
+   * One request per card: a failure leaves the earlier cards moved, and a re-run
+   * skips them as unchanged.
+   */
+  public async moveWorkItems(params: MoveWorkItemsParams): Promise<MoveResult[]> {
+    const plans = await this.planMove(params);
+    const witApi = await this.getWorkItemTrackingApi();
+    const results: MoveResult[] = [];
+    for (const { card, from, operations } of plans) {
+      if (operations.length === 0) {
+        results.push({ workItem: card, from, moved: false });
+        continue;
+      }
+      const workItem = await witApi.updateWorkItem(undefined, operations, card.id!, this.config.project);
+      results.push({ workItem, from, moved: true });
+    }
+    return results;
   }
 
   /**

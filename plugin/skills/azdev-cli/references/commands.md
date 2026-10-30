@@ -178,7 +178,17 @@ Output: `since` (start of the window); `assigned[]` — cards assigned to me tha
 
 `azdev workitem link <id> --targetId <id> --linkType <type> [--comment <t>] [--raw]` — `<id>` is the source.
 
-Link types: `System.LinkTypes.Hierarchy-Forward` (child), `System.LinkTypes.Hierarchy-Reverse` (parent), `System.LinkTypes.Related`, `System.LinkTypes.Dependency-Forward` (successor), `System.LinkTypes.Dependency-Reverse` (predecessor), `System.LinkTypes.Duplicate-Forward` / `-Reverse`.
+Link types: `System.LinkTypes.Hierarchy-Forward` (child), `System.LinkTypes.Hierarchy-Reverse` (parent), `System.LinkTypes.Related`, `System.LinkTypes.Dependency-Forward` (successor), `System.LinkTypes.Dependency-Reverse` (predecessor), `System.LinkTypes.Duplicate-Forward` / `-Reverse`. A card has one parent: linking a second one fails — to change it, use `workitem move`.
+
+### workitem move
+
+`azdev workitem move <ids> (--parent <id> | --noParent) [--dryRun] [--raw]` — moves cards to another parent (story). `<ids>` is one id or a comma-separated list (`101,102`). One request per card removes the current parent link and adds the new one, so a card is never left without a parent halfway; sprint, area and the rest of the card stay as they are.
+
+- `--parent <id>` the new parent. `--noParent` only removes the current parent link.
+- The new parent and every card are read before anything is written: a wrong id fails without moving any card.
+- Each row has `from` (the previous parent, `null` when there was none) and `action`: `moved`, or `unchanged` when the card already hangs where asked — nothing is sent for it, so re-running after a failure is safe.
+- `--dryRun` prints `{ dryRun, to, cards[] }`, each card with `from` and `action` `move` or `unchanged`, without moving.
+- `--raw` the full work items.
 
 ### workitem bulk-create
 

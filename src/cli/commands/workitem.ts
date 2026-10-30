@@ -22,6 +22,7 @@ import {
   parseCount,
   parseCsv,
   parseId,
+  parseIds,
   parseJsonObject,
   parseOptionalId,
   parseRichTextFormat,
@@ -589,6 +590,47 @@ const link = defineCommand({
   },
 });
 
+const move = defineCommand({
+  meta: {
+    name: 'move',
+    description: 'Move cards to another parent (story): unlinks the current parent and links the new one in one request per card; --noParent only unlinks',
+  },
+  args: {
+    ...globalOptions,
+    ids: { type: 'positional', description: 'Work item ID(s) to move, comma-separated (101,102)', required: true },
+    parent: { type: 'string', description: 'New parent work item ID' },
+    noParent: { type: 'boolean', description: 'Only remove the current parent link' },
+    dryRun: { type: 'boolean', description: 'Print where each card hangs and where it would go, without moving' },
+    raw: rawWrite,
+  },
+  async run({ args }) {
+    const ids = parseIds(args.ids);
+    const parentId = parseOptionalId(args.parent, 'parent work item ID');
+    if (parentId === undefined && !args.noParent) failUsage('Pass the new parent with --parent <id>, or --noParent');
+    if (parentId !== undefined && args.noParent) failUsage('Pass --parent or --noParent, not both');
+    if (parentId !== undefined && ids.includes(parentId)) failUsage(`Work item ${parentId} cannot be its own parent`);
+
+    await runService(WorkItemService, args, async (svc) => {
+      if (args.dryRun) {
+        const plans = await svc.planMove({ ids, parentId });
+        const cards = plans.map(({ card, from, operations }) => ({
+          ...slimWorkItem(card, ['WorkItemType', 'State', 'Title']),
+          from: from ?? null,
+          action: operations.length ? 'move' : 'unchanged',
+        }));
+        return { dryRun: true, to: parentId ?? null, cards };
+      }
+      const results = await svc.moveWorkItems({ ids, parentId });
+      if (args.raw) return results.map(r => r.workItem);
+      return results.map(({ workItem, from, moved }) => ({
+        ...svc.summarize(workItem),
+        from: from ?? null,
+        action: moved ? 'moved' : 'unchanged',
+      }));
+    });
+  },
+});
+
 const bulkCreate = defineCommand({
   meta: { name: 'bulk-create', description: 'Bulk create or update work items' },
   args: {
@@ -646,6 +688,7 @@ export default defineCommand({
     'set-state': setState,
     assign,
     link,
+    move,
     'bulk-create': bulkCreate,
   },
 });

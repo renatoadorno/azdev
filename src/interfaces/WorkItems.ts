@@ -246,6 +246,15 @@ export interface CreateLinkParams {
 }
 
 /**
+ * Interface for moving work items to another parent
+ */
+export interface MoveWorkItemsParams {
+  ids: number[];
+  /** New parent; undefined only removes the current one. */
+  parentId?: number;
+}
+
+/**
  * Interface for bulk operations on work items
  */
 export interface BulkWorkItemParams {

@@ -1,4 +1,3 @@
-import { WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { WorkItem, WorkItemRelation } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import type { ViewWorkItemParams, WorkItemAttachmentsParams } from '../interfaces/WorkItems';
@@ -88,13 +87,6 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<Buffer> {
 export class WorkItemViewService extends WorkItemService {
   constructor(config: AzureDevOpsConfig) {
     super(config);
-  }
-
-  private async getWithRelations(id: number): Promise<WorkItem> {
-    const witApi = await this.getWorkItemTrackingApi();
-    const workItem = await witApi.getWorkItem(id, undefined, undefined, WorkItemExpand.Relations, this.config.project);
-    if (!workItem) throw new Error(`Work item ${id} not found`);
-    return workItem;
   }
 
   /** Readable text of a rich-text field, honouring the format the item stores it in. */

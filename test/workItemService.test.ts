@@ -396,6 +396,54 @@ describe('WorkItemService.queryWorkItems', () => {
   });
 });
 
+describe('WorkItemService.moveWorkItems', () => {
+  const parentOf = (id: number) => [{ rel: 'System.LinkTypes.Hierarchy-Reverse', url: `${ORG}/b3f9/_apis/wit/workItems/${id}` }];
+  const CARDS: Record<number, unknown> = {
+    101: { id: 101, rev: 4, relations: parentOf(100), fields: {} },
+    102: { id: 102, rev: 9, relations: parentOf(200), fields: {} },
+    100: { id: 100, rev: 1, fields: {} },
+    200: { id: 200, rev: 1, fields: {} },
+  };
+  const moving = () => makeService({ getWorkItem: async (id: number) => CARDS[id] ?? null });
+
+  it('swaps the parent link in one request per card and skips a card already there', async () => {
+    const { svc, calls } = moving();
+    const results = await svc.moveWorkItems({ ids: [101, 102], parentId: 200 });
+
+    expect(calls.updateWorkItem).toHaveLength(1);
+    const [, operations, id, project] = calls.updateWorkItem![0]!;
+    expect([id, project]).toEqual([101, 'Demo']);
+    expect(operations).toEqual([
+      { op: Operation.Test, path: '/rev', value: 4 },
+      { op: Operation.Remove, path: '/relations/0' },
+      { op: Operation.Add, path: '/relations/-', value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: `${ORG}/_apis/wit/workItems/200` } },
+    ]);
+    expect(results.map(({ from, moved }) => ({ from, moved }))).toEqual([
+      { from: 100, moved: true },
+      { from: 200, moved: false },
+    ]);
+  });
+
+  it('reads every card and the new parent before writing, so a wrong id moves nothing', async () => {
+    const missingCard = moving();
+    await expect(missingCard.svc.moveWorkItems({ ids: [101, 999], parentId: 200 })).rejects.toThrow('Work item 999 not found');
+    expect(missingCard.calls.updateWorkItem).toBeUndefined();
+
+    const missingParent = moving();
+    await expect(missingParent.svc.moveWorkItems({ ids: [101], parentId: 999 })).rejects.toThrow('Work item 999 not found');
+    expect(missingParent.calls.updateWorkItem).toBeUndefined();
+  });
+
+  it('only unlinks the parent without a new one', async () => {
+    const { svc, calls } = moving();
+    await svc.moveWorkItems({ ids: [102] });
+    expect(calls.updateWorkItem![0]![1]).toEqual([
+      { op: Operation.Test, path: '/rev', value: 9 },
+      { op: Operation.Remove, path: '/relations/0' },
+    ]);
+  });
+});
+
 describe('WorkItemService.summarize', () => {
   it('confirms a write with the key fields and a browser link', () => {
     const { svc } = makeService();

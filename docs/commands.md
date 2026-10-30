@@ -633,6 +633,38 @@ azdev workitem link 42 --targetId 10 --linkType System.LinkTypes.Hierarchy-Rever
 azdev workitem link 42 --targetId 55 --linkType System.LinkTypes.Related --comment "Blocked by this"
 ```
 
+A work item has a single parent: linking a second `Hierarchy-Reverse` fails. To change the parent, use `workitem move`.
+
+---
+
+### `workitem move`
+
+Move cards to another parent (story).
+
+```
+azdev workitem move <ids> (--parent <id> | --noParent) [--dryRun]
+```
+
+| Argument/Option | Type | Required | Description |
+|---|---|---|---|
+| `ids` | number list | Yes | Work item ID, or comma-separated IDs (`101,102`) |
+| `--parent` | number | One of | New parent work item ID |
+| `--noParent` | boolean | One of | Only remove the current parent link |
+| `--dryRun` | boolean | No | Print where each card hangs and where it would go, without moving |
+| `--raw` | boolean | No | Return the full updated work items |
+
+Each card gets one request that removes its current parent link and adds the new one, guarded by the card's revision — the card is never left without a parent halfway, and a card changed in the meantime fails instead of losing another link. Sprint, area and every other field stay as they are.
+
+The new parent and every card are read before anything is written, so a wrong ID moves nothing. Each row carries `from` (the previous parent, `null` when there was none) and `action`: `moved`, or `unchanged` when the card already hangs where asked — nothing is sent for it, so re-running after a failure is safe.
+
+**Examples:**
+
+```bash
+azdev workitem move 1301,1302 --parent 1250 --dryRun   # check first
+azdev workitem move 1301,1302 --parent 1250
+azdev workitem move 1303 --noParent                    # operational work, no story
+```
+
 ---
 
 ### `workitem bulk-create`

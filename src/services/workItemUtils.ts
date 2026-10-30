@@ -6,6 +6,7 @@
 
 import type { JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import type { WorkItem } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { RichTextFormat, WorkItemFilters } from '../interfaces/WorkItems';
 
 /** A hydrated work item as `slimWorkItem` returns it: `id` plus short field names. */
@@ -117,6 +118,32 @@ export function parentRelationOperation(orgUrl: string, parentId: number): JsonP
     path: '/relations/-',
     value: { rel: HIERARCHY_REVERSE, url: workItemApiUrl(orgUrl, parentId) },
   };
+}
+
+/** A card's current parent and the patch that hangs it under another one. */
+export interface ParentChange {
+  from?: number;
+  /** Empty when the card already hangs where asked. */
+  operations: JsonPatchOperation[];
+}
+
+/**
+ * Patch moving `workItem` (read with its relations) under `parentId`, or out of
+ * its parent when `parentId` is undefined. Removal and link go in one patch, so
+ * the card is never left without a parent halfway.
+ */
+export function parentChange(workItem: WorkItem, orgUrl: string, parentId?: number): ParentChange {
+  const relations = workItem.relations ?? [];
+  const index = relations.findIndex(relation => relation.rel === HIERARCHY_REVERSE);
+  const from = index === -1 ? undefined : idFromWorkItemUrl(relations[index]!.url);
+  if (from === parentId) return { from, operations: [] };
+
+  // A relation is removed by position: the revision test fails the patch if the
+  // card changed since it was read, instead of removing another link.
+  const operations: JsonPatchOperation[] = [{ op: Operation.Test, path: '/rev', value: workItem.rev }];
+  if (index !== -1) operations.push({ op: Operation.Remove, path: `/relations/${index}` });
+  if (parentId !== undefined) operations.push(parentRelationOperation(orgUrl, parentId));
+  return { from, operations };
 }
 
 /** Fields fetched when hydrating IDs without an explicit column list. */

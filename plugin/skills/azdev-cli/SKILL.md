@@ -1,11 +1,11 @@
 ---
 name: azdev-cli
-description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; see what reached me (cards assigned to me that others changed, cards taken from me, changes to a story I watch and its cards, comments that mention me); create, update, comment on (or fix a comment), assign or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story; measure progress of a sprint or story, delivery per sprint or week, lead and cycle time, aging or work carried over between sprints; query or count cards by any field."
+description: "Azure DevOps work items through the azdev CLI. Use when the user refers to an Azure DevOps card, task, bug or story — a dev.azure.com or visualstudio.com link, or a #1234 id in a project tracked in Azure DevOps (not a GitHub issue or PR) — to read its spec, comments, images or history; list my work or a sprint; see what reached me (cards assigned to me that others changed, cards taken from me, changes to a story I watch and its cards, comments that mention me); create, update, comment on (or fix a comment), assign, move to another story or close cards; create a story's standard cards or check a story or sprint for missing ones; analyze someone's delivery by story; measure progress of a sprint or story, delivery per sprint or week, lead and cycle time, aging or work carried over between sprints; query or count cards by any field."
 ---
 
 # azdev CLI
 
-`azdev` is the Azure DevOps CLI on this machine — 59 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
+`azdev` is the Azure DevOps CLI on this machine — 60 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
 
 ## Preflight
 
@@ -43,6 +43,7 @@ One call answers each of these — reach for it before composing WIQL or chainin
 - Fix your own comment (typo, wrong link) → `azdev workitem comment-edit <id> <commentId> --file <file>`, the id from `workitem comments`; the whole text is replaced, and new facts go in a new comment
 - State → `azdev workitem set-state <id> --state <s> [--comment <t>]`
 - Owner → `azdev workitem assign <id> --to <user>`
+- Move cards to another story → `azdev workitem move <id>[,<id>…] --parent <storyId>` (`--noParent` only unlinks); sprint and area stay — change them with `update --sprint` when the new story is elsewhere
 
 **Story cycle**
 - Is the story complete? → `azdev flow status <storyId>`

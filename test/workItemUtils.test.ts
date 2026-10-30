@@ -4,6 +4,7 @@ import {
   buildFilterClauses,
   fieldOperations,
   idFromWorkItemUrl,
+  parentChange,
   parentRelationOperation,
   parseTags,
 } from '../src/services/workItemUtils';
@@ -100,6 +101,45 @@ describe('work item relations', () => {
       op: Operation.Add,
       path: '/relations/-',
       value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: 'https://dev.azure.com/acme/_apis/wit/workItems/14547' },
+    });
+  });
+
+  describe('parentChange', () => {
+    const ORG = 'https://dev.azure.com/acme';
+    const rel = (type: string, id: number) => ({ rel: type, url: `${ORG}/b3f9/_apis/wit/workItems/${id}` });
+    const card = (...relations: Array<ReturnType<typeof rel>>) => ({ id: 7, rev: 12, relations });
+    const linkTo = (id: number) => parentRelationOperation(ORG, id);
+
+    it('removes the current parent by its position and links the new one, guarded by the revision', () => {
+      const item = card(rel('System.LinkTypes.Related', 3), rel('System.LinkTypes.Hierarchy-Forward', 4), rel('System.LinkTypes.Hierarchy-Reverse', 100));
+      expect(parentChange(item, ORG, 200)).toEqual({
+        from: 100,
+        operations: [
+          { op: Operation.Test, path: '/rev', value: 12 },
+          { op: Operation.Remove, path: '/relations/2' },
+          linkTo(200),
+        ],
+      });
+    });
+
+    it('only links a card that has no parent', () => {
+      expect(parentChange(card(rel('System.LinkTypes.Related', 3)), ORG, 200)).toEqual({
+        from: undefined,
+        operations: [{ op: Operation.Test, path: '/rev', value: 12 }, linkTo(200)],
+      });
+      expect(parentChange({ id: 7, rev: 1 }, ORG, 200).operations).toHaveLength(2);
+    });
+
+    it('only unlinks when no new parent is given', () => {
+      expect(parentChange(card(rel('System.LinkTypes.Hierarchy-Reverse', 100)), ORG)).toEqual({
+        from: 100,
+        operations: [{ op: Operation.Test, path: '/rev', value: 12 }, { op: Operation.Remove, path: '/relations/0' }],
+      });
+    });
+
+    it('sends nothing when the card already hangs where asked', () => {
+      expect(parentChange(card(rel('System.LinkTypes.Hierarchy-Reverse', 200)), ORG, 200)).toEqual({ from: 200, operations: [] });
+      expect(parentChange(card(), ORG)).toEqual({ from: undefined, operations: [] });
     });
   });
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `workitem move <ids> (--parent <id> | --noParent) [--dryRun] [--raw]`: move
+  cards to another story. One request per card swaps the parent link, guarded by
+  the card's revision; every card and the new parent are read first, so a wrong
+  id moves nothing, and a card already in place comes back `unchanged`.
+
 ## [0.9.0] - 2026-10-15
 
 Fix a comment already on the board.
