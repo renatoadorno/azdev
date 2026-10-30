@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
+Move cards from one story to another.
+
 ### Added
 
 - `workitem move <ids> (--parent <id> | --noParent) [--dryRun] [--raw]`: move
@@ -304,7 +308,8 @@ Credentials move out of the config file and into the OS keychain.
   groups, in toon output by default with `--json` and `--markdown`.
 - Standalone binaries for darwin-arm64 and linux-x64.
 
-[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.9.0...HEAD
+[unreleased]: https://github.com/renatoadorno/azdev/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/renatoadorno/azdev/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/renatoadorno/azdev/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/renatoadorno/azdev/compare/v0.6.0...v0.8.0
 [0.7.0]: https://github.com/renatoadorno/azdev/pull/4
