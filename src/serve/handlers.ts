@@ -68,7 +68,7 @@ export function dataHandlers(engine: () => SyncEngine, subscriptions: Subscripti
     },
     'items.watch': async (params, conn) => {
       const query = parseItemsQuery(params as Record<string, unknown>);
-      const result = await engine().query(query);
+      const result = await engine().query(query, { keep: true });
       return { sub: subscriptions.add(conn, query, result), ...result };
     },
     'items.unwatch': (params, conn) => {

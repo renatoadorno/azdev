@@ -320,9 +320,8 @@ export class SyncEngine {
 
     const keep = itemsToKeep(fetched, this.scopes, context, this.tempScopes.memberIds());
     const kept = fetched.filter(item => keep.has(item.id));
-    const keptIds = new Set(kept.map(item => item.id));
     const changed = this.store.upsert(kept);
-    const removed = this.store.remove(this.store.ids().filter(id => !keptIds.has(id)));
+    const removed = this.prune(new Set(kept.map(item => item.id)));
 
     const first = !this.syncedThisRun;
     const syncedAt = this.finishSync(startedAt, true);
@@ -366,7 +365,7 @@ export class SyncEngine {
     const incoming = new Set([...fresh.map(item => item.id), ...missing]);
     const keep = itemsToKeep([...pool.values()], scopes, context, this.tempScopes.memberIds());
     const changed = this.store.upsert([...pool.values()].filter(item => incoming.has(item.id) && keep.has(item.id)));
-    const removed = this.store.remove(this.store.ids().filter(id => !keep.has(id)));
+    const removed = this.prune(keep);
 
     const syncedAt = this.finishSync(startedAt, false);
     if (changed.length || removed.length) this.saveSnapshot();
@@ -406,8 +405,12 @@ export class SyncEngine {
   /** Drops the live scopes unused for too long, and the items only they held. */
   private expireTempScopes(): void {
     if (!this.tempScopes.expire(this.now().getTime()).length || !this.meta) return;
-    const keep = itemsToKeep(this.store.all(), this.scopes, scopeContext(this.meta), this.tempScopes.memberIds());
-    this.store.remove(this.store.ids().filter(id => !keep.has(id)));
+    this.prune(itemsToKeep(this.store.all(), this.scopes, scopeContext(this.meta), this.tempScopes.memberIds()));
+  }
+
+  /** Drops what no scope holds any more; returns the ids dropped. */
+  private prune(keep: Set<number>): number[] {
+    return this.store.remove(this.store.ids().filter(id => !keep.has(id)));
   }
 
   // ── Schedule ──────────────────────────────────────────────────────────────
@@ -482,7 +485,7 @@ export class SyncEngine {
    * match, otherwise asked of Azure DevOps (up to 1000 cards) and kept as a live
    * scope. A free-text search alone is answered live and kept nowhere.
    */
-  async query(query: ParsedQuery): Promise<ItemsResult> {
+  async query(query: ParsedQuery, options: { keep?: boolean } = {}): Promise<ItemsResult> {
     await this.ready();
     this.expireTempScopes();
     const sprintPaths = this.sprintPaths(query.filter);
@@ -493,17 +496,18 @@ export class SyncEngine {
       return this.list(query);
     }
     if (isCovered(query.filter, this.scopes, { sprintPaths, memberIds: this.memberIds() })) return this.list(query);
-    return this.live(query, key, filter, sprintPaths);
+    return this.live(query, key, filter, sprintPaths, options.keep === true);
   }
 
-  private async live(query: ParsedQuery, key: string, filter: ItemFilter, sprintPaths: string[] | null): Promise<ItemsResult> {
+  /** `keep` for a watch: it is read again from the cache after every sync, so even free text needs a scope. */
+  private async live(query: ParsedQuery, key: string, filter: ItemFilter, sprintPaths: string[] | null, keep: boolean): Promise<ItemsResult> {
     const meta = this.meta!;
     const now = this.now();
     const wiql = filterWiql(query.filter, meta, sprintPaths, now);
     const ids = (await this.call(() => this.source.runQuery(wiql))).slice(0, LIVE_LIMIT);
     const held = await this.fetchWithRelatives(ids);
 
-    if (isTextOnly(query.filter)) {
+    if (isTextOnly(query.filter) && !keep) {
       const scratch = new ItemStore();
       scratch.upsert(held);
       const context = createCardContext(meta, scratch, now);
@@ -568,8 +572,7 @@ export class SyncEngine {
     const updated = toCard(saved, createCardContext(this.meta!, this.store, this.now()));
     this.store.upsert([saved]);
     // The new state may take the card out of every scope (Done leaves "mine, open").
-    const keep = itemsToKeep(this.store.all(), this.scopes, scopeContext(this.meta!), this.tempScopes.memberIds());
-    this.store.remove(this.store.ids().filter(stored => !keep.has(stored)));
+    this.prune(itemsToKeep(this.store.all(), this.scopes, scopeContext(this.meta!), this.tempScopes.memberIds()));
     this.notify();
     return updated;
   }

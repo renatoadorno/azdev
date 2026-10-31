@@ -440,6 +440,28 @@ describe('watching over the protocol', () => {
     client.close();
   });
 
+  it('keeps a free-text watch from falling back to the cache subset after a sync', async () => {
+    const source = project();
+    const { cache, client, pushes } = await watchSetup(source);
+    const watch = await client.call('items.watch', { filter: { q: 'Card 5' }, fields: ['title'] });
+    expect(watch).toMatchObject({ total: 1, source: 'live' });
+    expect(cache.liveScopes()).toBe(1);
+
+    source.set(item(3, { assignee: ANA, title: 'Outro', rev: 2, changedAt: later(30_000) }));
+    advance(MIN);
+    await cache.incrementalSync();
+    await settle();
+    expect(pushes).toHaveLength(0);
+
+    source.set(item(5, { assignee: ANA, sprint: 'Demo\\Sprint 81', title: 'Card 5 mudou', rev: 2, changedAt: later(90_000) }));
+    advance(2 * MIN);
+    await cache.incrementalSync();
+    await settle();
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]!.result.items).toEqual([{ id: 5, title: 'Card 5 mudou' }]);
+    client.close();
+  });
+
   it('stops pushing after unwatch, and forgets the subscriptions of a closed connection', async () => {
     const source = project();
     const { cache, client, pushes, subscriptions } = await watchSetup(source);

@@ -111,6 +111,8 @@ describe('upstream state errors', () => {
     expect(toServeError(new Error('TF401320: Rule Error for field State.')).kind).toBe('invalid_state');
     expect(toServeError(new Error('State "Done" is not valid for Issue. Valid states: New')).kind).toBe('invalid_state');
     expect(toServeError(Object.assign(new Error('boom'), { statusCode: 412 })).kind).toBe('conflict');
+    // A failed test /rev stays a conflict even when the message also names the rule error.
+    expect(toServeError(Object.assign(new Error('TF401320: Rule Error. TF26071: changed by someone else'), { statusCode: 412 })).kind).toBe('conflict');
   });
 });
 
