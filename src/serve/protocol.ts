@@ -141,3 +141,51 @@ const encoder = new TextEncoder();
 export function encodeLine(message: ServerMessage | Request): Uint8Array {
   return encoder.encode(`${JSON.stringify(message)}\n`);
 }
+
+/** Bytes a socket accepted, or a negative number once it is closed. */
+export type SocketWrite = (bytes: Uint8Array) => number;
+
+/**
+ * Bytes waiting for the socket. A socket write may take only part of a large
+ * line (seen with 1 MB); the rest waits here until `drain` calls flush again.
+ */
+export class OutboundQueue {
+  private chunks: Uint8Array[] = [];
+  private queued = 0;
+
+  constructor(
+    private readonly write: SocketWrite,
+    private readonly maxBytes: number,
+  ) {}
+
+  get pending(): number {
+    return this.queued;
+  }
+
+  /** Queues and flushes; false when the backlog would pass the limit (a client that stopped reading). */
+  enqueue(bytes: Uint8Array): boolean {
+    if (this.queued + bytes.length > this.maxBytes) return false;
+    this.chunks.push(bytes);
+    this.queued += bytes.length;
+    this.flush();
+    return true;
+  }
+
+  flush(): void {
+    while (this.chunks.length) {
+      const chunk = this.chunks[0]!;
+      const written = this.write(chunk);
+      if (written < 0) {
+        this.chunks = [];
+        this.queued = 0;
+        return;
+      }
+      this.queued -= written;
+      if (written < chunk.length) {
+        this.chunks[0] = chunk.subarray(written);
+        return;
+      }
+      this.chunks.shift();
+    }
+  }
+}

@@ -99,9 +99,19 @@ src/
   serve/            — `azdev serve`, the local daemon for the Herdr mod (later the CLI); in progress
     protocol.ts     — NDJSON over TCP: LineSplitter (splits bytes on 0x0A before decoding,
                       so UTF-8 survives chunk cuts), parseRequest against METHODS, message
-                      builders, ProtocolError
+                      builders, ProtocolError, OutboundQueue (socket writes can be partial;
+                      drain flushes the rest)
     errors.ts       — any failure → ServeError {kind, message, hint}: ConfigError, HTTP
                       status (401 → needs_login, 409/412/TF26071 → conflict), socket codes
+    session.ts      — one connection: only hello (token + proto) until it succeeds, then handlers
+    server.ts       — Bun.listen on 127.0.0.1: pre-hello byte limit, hello timeout, slow-client cap
+    client.ts       — connectDaemon (Bun.connect + hello), DaemonError; used by serve status/stop
+    runtime.ts      — serve.json (port, token, pid; 0600, atomic) next to config.json, flock lock
+                      via bun:ffi (kernel frees it on kill -9), cacheDir() (AZDEV_CACHE_DIR)
+    daemon.ts       — runDaemon: lock (exit 75 if taken), credential re-read on hello while
+                      missing, idle exit, exits when the compiled binary on disk is replaced
+    control.ts      — start (detached, swaps a daemon of another version) / stop / status
+    schema.ts       — describeProtocol() for schema.get
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
@@ -133,6 +143,8 @@ src/
       flow.ts       — list / status / apply
       stats.ts      — throughput / cycle-time / aging
       config.ts     — show / set / get / unset / paths
+      serve.ts      — `azdev serve [start|stop|status]`: a positional action, because citty
+                      runs a parent's run after its subcommand
     formatters/
       index.ts      — format(data, flags) selector
       toon.ts       — encode() from @toon-format/toon (default)
@@ -222,6 +234,7 @@ non-default view goes in an `async` callback that returns the value to print.
 - `0` — success
 - `1` — error (API failures via `exitWithError`, invalid IDs, invalid flag values)
 - `2` — config file missing/invalid, incomplete, or no credential found (`loadCliConfig` / `config show`); flows.json missing/invalid (`loadFlows`)
+- `75` — `azdev serve` while another daemon holds the lock
 
 ## Configuration
 

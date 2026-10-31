@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { METHODS } from '../src/interfaces/Serve';
 import {
   LineSplitter,
+  OutboundQueue,
   ProtocolError,
   encodeLine,
   failure,
@@ -110,6 +111,53 @@ describe('parseRequest', () => {
     const err = protocolError(() => parseRequest('{"id":2,"method":"items.get","params":[16053]}'));
     expect(err.id).toBe(2);
     expect(err.message).toContain('"params"');
+  });
+});
+
+describe('OutboundQueue', () => {
+  /** A socket that takes at most `budget` bytes until drained. */
+  function slowSocket(budget: number) {
+    const received: number[] = [];
+    let left = budget;
+    return {
+      received,
+      drain(next: number) {
+        left = next;
+      },
+      write(bytes: Uint8Array) {
+        const n = Math.min(left, bytes.length);
+        received.push(...bytes.subarray(0, n));
+        left -= n;
+        return n;
+      },
+    };
+  }
+
+  it('keeps the rest of a partial write and sends it on the next flush, in order', () => {
+    const socket = slowSocket(3);
+    const queue = new OutboundQueue(b => socket.write(b), 100);
+    queue.enqueue(bytes('abcdef'));
+    queue.enqueue(bytes('gh'));
+    expect(String.fromCharCode(...socket.received)).toBe('abc');
+    expect(queue.pending).toBe(5);
+
+    socket.drain(100);
+    queue.flush();
+    expect(String.fromCharCode(...socket.received)).toBe('abcdefgh');
+    expect(queue.pending).toBe(0);
+  });
+
+  it('refuses to grow past the limit, so a client that stopped reading cannot exhaust memory', () => {
+    const queue = new OutboundQueue(() => 0, 10);
+    expect(queue.enqueue(bytes('123456'))).toBe(true);
+    expect(queue.enqueue(bytes('789012'))).toBe(false);
+    expect(queue.pending).toBe(6);
+  });
+
+  it('drops everything once the socket reports it is closed', () => {
+    const queue = new OutboundQueue(() => -1, 100);
+    queue.enqueue(bytes('abc'));
+    expect(queue.pending).toBe(0);
   });
 });
 

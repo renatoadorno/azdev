@@ -62,7 +62,8 @@ export class ConfigError extends Error {
   }
 }
 
-function exitOnConfigError(err: unknown): never {
+/** Prints a ConfigError and exits 2; anything else is rethrown. */
+export function exitOnConfigError(err: unknown): never {
   if (!(err instanceof ConfigError)) throw err;
   for (const line of err.lines) console.error(line);
   process.exit(2);
