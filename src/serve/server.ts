@@ -21,6 +21,8 @@ export interface ServerOptions extends SessionOptions {
 export interface RunningServer {
   port: number;
   clients(): number;
+  /** To every connection that said hello. */
+  broadcast(message: ServerMessage): void;
   stop(): void;
 }
 
@@ -138,6 +140,9 @@ export function startServer(options: ServerOptions): RunningServer {
   return {
     port: listener.port,
     clients: () => [...sockets].filter(s => s.data.session.isAuthed).length,
+    broadcast(message) {
+      for (const socket of sockets) if (socket.data.session.isAuthed) socket.data.conn.send(message);
+    },
     stop() {
       for (const socket of sockets) socket.end();
       listener.stop(true);

@@ -8,6 +8,7 @@ import { SyncEngine, type EngineOptions } from '../src/serve/engine';
 import { parseItemsQuery } from '../src/serve/filters';
 import { dataHandlers } from '../src/serve/handlers';
 import { startServer, type RunningServer } from '../src/serve/server';
+import { Subscriptions } from '../src/serve/subscriptions';
 import type { Status } from '../src/interfaces/Serve';
 import { ANA, FakeSource, NOW, ORG, PROJECT, RAW_META, item } from './serveFixtures';
 
@@ -171,7 +172,7 @@ describe('data methods over the protocol', () => {
   const STATUS = { version: '0.11.0' } as Status;
 
   function serveWith(requireEngine: () => SyncEngine) {
-    const server = startServer({ token: TOKEN, version: '0.11.0', status: () => STATUS, handlers: dataHandlers(requireEngine) });
+    const server = startServer({ token: TOKEN, version: '0.11.0', status: () => STATUS, handlers: dataHandlers(requireEngine, new Subscriptions()) });
     servers.push(server);
     return connectDaemon({ port: server.port, token: TOKEN });
   }

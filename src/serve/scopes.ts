@@ -79,8 +79,9 @@ export function matchesRule(item: RawItem, rule: ScopeRule, context: ScopeContex
  * card shows its parent's title and its children's progress, so both are kept.
  * A parent id may name an item not fetched yet.
  */
-export function itemsToKeep(items: RawItem[], scopes: Scope[], context: ScopeContext): Set<number> {
+export function itemsToKeep(items: RawItem[], scopes: Scope[], context: ScopeContext, extraMembers: Iterable<number> = []): Set<number> {
   const members = new Set(items.filter(item => scopes.some(s => matchesRule(item, s.rule, context))).map(item => item.id));
+  for (const id of extraMembers) members.add(id);
   const keep = new Set(members);
   for (const item of items) {
     const parent = item.fields[PARENT_FIELD];

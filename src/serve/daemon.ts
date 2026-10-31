@@ -16,9 +16,12 @@ import {
   removeServeInfo,
   writeServeInfo,
 } from './runtime';
+import { serverEvent } from './protocol';
+import { SyncScheduler, statusFingerprint } from './scheduler';
 import { describeProtocol } from './schema';
 import { startServer } from './server';
 import { snapshotPath } from './snapshot';
+import { Subscriptions, followEngine } from './subscriptions';
 
 export interface DaemonOptions {
   port: number;
@@ -142,21 +145,59 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
 
   let engine: SyncEngine | null = null;
   let engineGeneration = -1;
+  const scheduler = new SyncScheduler({ engine: () => engine, active: () => subscriptions.count > 0 });
+  const subscriptions = new Subscriptions(() => scheduler.poke());
+
+  let lastStatus = '';
+  /** Tells every client when the login, the stale flag or the last error changed — and only then. */
+  function broadcastStatus() {
+    const current = status();
+    const fingerprint = statusFingerprint(current);
+    if (fingerprint === lastStatus) return;
+    lastStatus = fingerprint;
+    server.broadcast(serverEvent('status', current));
+  }
+
+  /** After a 401: the credential may have been replaced (a new token in the keychain) since the daemon read it. */
+  async function renewCredential(): Promise<boolean> {
+    try {
+      await credentials.load();
+    } catch {
+      return false;
+    }
+    if (!engine || !credentials.config) return false;
+    engine.setSource(new SyncService(credentials.config));
+    engineGeneration = credentials.generation;
+    return true;
+  }
+
   /** Built on the first data request, from the snapshot; rebuilt client when the credential changes. */
   function requireEngine(): SyncEngine {
     const config = credentials.require();
     if (!engine) {
-      engine = new SyncEngine({
+      const created = new SyncEngine({
         orgUrl: config.orgUrl,
         project: config.project,
         source: new SyncService(config),
         snapshotFile: snapshotPath(cacheDir(), config.orgUrl, config.project),
         watched: () => watched(config.project),
-        onSuccess: () => credentials.markOk(),
-        onError: error => credentials.markFailure(error),
+        onSuccess: () => {
+          credentials.markOk();
+          broadcastStatus();
+        },
+        onError: error => {
+          credentials.markFailure(error);
+          broadcastStatus();
+        },
+        onUnauthorized: renewCredential,
         log,
       });
-      engine.loadSnapshot();
+      created.loadSnapshot();
+      followEngine(created, subscriptions, () => {
+        scheduler.poke();
+        broadcastStatus();
+      });
+      engine = created;
     } else if (engineGeneration !== credentials.generation) {
       engine.setSource(new SyncService(config));
     }
@@ -172,9 +213,14 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
     handlers: {
       'status.get': () => status(),
       'schema.get': () => describeProtocol(),
-      ...dataHandlers(requireEngine),
+      ...dataHandlers(requireEngine, subscriptions),
     },
-    beforeHello: () => credentials.retryIfMissing(),
+    beforeHello: async () => {
+      const before = credentials.auth.state;
+      await credentials.retryIfMissing();
+      // Not now: this connection's hello has not been answered yet.
+      if (credentials.auth.state !== before) setTimeout(broadcastStatus, 0);
+    },
     onActivity: () => {
       lastActivity = Date.now();
     },
@@ -197,6 +243,7 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
 
   // Loads the snapshot now (no network), so status shows the cache from the start.
   if (credentials.config) requireEngine();
+  lastStatus = statusFingerprint(status());
 
   writeServeInfo({ pid: process.pid, port: server.port, token, version: options.version, proto: PROTOCOL_VERSION, startedAt });
   log('listening', { pid: process.pid, port: server.port, project, auth: credentials.auth.state, idleExitMs: options.idleExitMs });
@@ -206,6 +253,7 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
     if (stopping) return;
     stopping = true;
     log('stopping', { reason });
+    scheduler.stop();
     engine?.saveSnapshot();
     server.stop();
     removeServeInfo(process.pid);

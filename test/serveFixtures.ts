@@ -124,6 +124,7 @@ export class FakeSource implements SyncSource {
   items = new Map<number, RawItem>();
   meta: RawMeta = RAW_META;
   queries: string[] = [];
+  precise: boolean[] = [];
   fetches: Array<{ ids: number[]; fields: string[] }> = [];
   metaCalls = 0;
   failWith: Error | null = null;
@@ -146,12 +147,23 @@ export class FakeSource implements SyncSource {
     return this.meta;
   }
 
-  async runQuery(wiql: string): Promise<number[]> {
+  async runQuery(wiql: string, timePrecision?: boolean): Promise<number[]> {
     if (this.failWith) throw this.failWith;
     this.queries.push(wiql);
+    this.precise.push(timePrecision === true);
     const all = [...this.items.values()];
     const ids = (text: string) => text.split(',').map(s => Number(s.trim()));
     const parentIn = (list: number[]) => all.filter(it => list.includes(it.fields['System.Parent'] as number)).map(it => it.id);
+
+    const changed = wiql.match(/\[System\.ChangedDate\] > '([^']*)'/);
+    if (changed) {
+      return all.filter(it => String(it.fields['System.ChangedDate']) > changed[1]!).map(it => it.id);
+    }
+    const title = wiql.match(/\[System\.Title\] CONTAINS '((?:[^']|'')*)'/);
+    if (title) {
+      const text = title[1]!.replace(/''/g, "'").toLowerCase();
+      return all.filter(it => String(it.fields['System.Title']).toLowerCase().includes(text)).map(it => it.id);
+    }
 
     if (wiql.includes('[System.AssignedTo] = @me')) {
       const email = this.meta.me.email;
@@ -160,7 +172,12 @@ export class FakeSource implements SyncSource {
         .map(it => it.id);
     }
     const sprint = wiql.match(/\[System\.IterationPath\] = '((?:[^']|'')*)'/);
-    if (sprint) return all.filter(it => it.fields['System.IterationPath'] === sprint[1]!.replace(/''/g, "'")).map(it => it.id);
+    if (sprint) {
+      return all
+        .filter(it => it.fields['System.IterationPath'] === sprint[1]!.replace(/''/g, "'"))
+        .sort((a, b) => String(b.fields['System.ChangedDate']).localeCompare(String(a.fields['System.ChangedDate'])))
+        .map(it => it.id);
+    }
     const watch = wiql.match(/\[System\.Id\] IN \(([^)]*)\) OR \[System\.Parent\] IN/);
     if (watch) {
       const watched = ids(watch[1]!);
