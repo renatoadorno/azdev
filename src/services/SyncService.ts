@@ -3,8 +3,10 @@ import { TimeFrame } from 'azure-devops-node-api/interfaces/WorkInterfaces';
 import { WorkItemErrorPolicy, type WorkItemType } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
 import type { RawItem, RawMeta, RawSprint, RawType, SyncSource } from '../interfaces/Sync';
-import { AREAS_GROUP, AzureDevOpsService, BATCH_LIMIT, CLASSIFICATION_DEPTH, ITERATIONS_GROUP } from './AzureDevOpsService';
+import { AREAS_GROUP, BATCH_LIMIT, CLASSIFICATION_DEPTH, ITERATIONS_GROUP } from './AzureDevOpsService';
 import { flattenAreas, flattenIterations } from './iterations';
+import { toRawItem } from './rawItem';
+import { WorkItemViewService } from './WorkItemViewService';
 
 const TIMEFRAMES: Record<number, RawSprint['timeframe']> = {
   [TimeFrame.Past]: 'past',
@@ -29,20 +31,8 @@ function toRawType(type: WorkItemType): RawType {
   };
 }
 
-/** Identities come with avatars, links and descriptors; the cache keeps the name and account. */
-function slimIdentities(fields: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(fields).map(([ref, value]) => {
-      const identity = value as { displayName?: unknown; uniqueName?: unknown } | null;
-      return typeof identity === 'object' && identity !== null && typeof identity.displayName === 'string'
-        ? [ref, { displayName: identity.displayName, uniqueName: identity.uniqueName }]
-        : [ref, value];
-    }),
-  );
-}
-
-/** The reads behind `azdev serve`'s cache: metadata, WIQL ids and items in batches. */
-export class SyncService extends AzureDevOpsService implements SyncSource {
+/** What `azdev serve` asks of Azure DevOps: metadata, WIQL ids and items in batches for the cache, and a card's detail and state change. */
+export class SyncService extends WorkItemViewService implements SyncSource {
   constructor(config: AzureDevOpsConfig) {
     super(config);
   }
@@ -103,11 +93,25 @@ export class SyncService extends AzureDevOpsService implements SyncSource {
       const chunk = ids.slice(i, i + BATCH_LIMIT);
       const batch = await witApi.getWorkItems(chunk, fields, undefined, undefined, WorkItemErrorPolicy.Omit, this.config.project);
       for (const item of batch ?? []) {
-        if (item?.id === undefined || item.rev === undefined) continue;
-        items.push({ id: item.id, rev: item.rev, fields: slimIdentities(item.fields ?? {}) });
+        const raw = toRawItem(item);
+        if (raw) items.push(raw);
       }
     }
     return items;
+  }
+
+  public fetchDetail(id: number, comments: number): Promise<Record<string, unknown>> {
+    return this.viewWorkItem({ id, comments });
+  }
+
+  public fetchRevisions(id: number): Promise<unknown[]> {
+    return this.getWorkItemHistory({ id });
+  }
+
+  public async changeState(change: { id: number; state: string; rev?: number; comment?: string }, fields: string[]): Promise<RawItem> {
+    const saved = toRawItem(await this.updateWorkItemState(change), fields);
+    if (!saved) throw new Error(`Work item ${change.id} came back without a revision`);
+    return saved;
   }
 
   private async teamMembers(coreApi: CoreApi): Promise<RawMeta['members']> {

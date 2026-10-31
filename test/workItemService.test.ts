@@ -192,6 +192,26 @@ describe('WorkItemService — description written from a template', () => {
   });
 });
 
+describe('WorkItemService — state change with a revision', () => {
+  it('puts the revision test first, so the whole patch is refused when the card moved on', async () => {
+    const { svc, calls } = makeService();
+    await svc.updateWorkItemState({ id: 7, state: 'Done', rev: 4, comment: 'ok' });
+    const patch = calls.updateWorkItem![0]![1] as Array<{ op: Operation; path: string; value: unknown }>;
+    expect(patch).toEqual([
+      { op: Operation.Test, path: '/rev', value: 4 },
+      { op: Operation.Add, path: '/fields/System.State', value: 'Done' },
+      { op: Operation.Add, path: '/fields/System.History', value: 'ok' },
+    ]);
+  });
+
+  it('sends no test without a revision', async () => {
+    const { svc, calls } = makeService();
+    await svc.updateWorkItemState({ id: 7, state: 'Done' });
+    const patch = calls.updateWorkItem![0]![1] as Array<{ path: string }>;
+    expect(patch.map(op => op.path)).toEqual(['/fields/System.State']);
+  });
+});
+
 describe('WorkItemService — invalid state', () => {
   const ruleError = Object.assign(new Error('TF401320: Rule Error for field State'), { statusCode: 400 });
 

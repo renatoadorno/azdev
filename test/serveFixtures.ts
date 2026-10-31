@@ -188,6 +188,46 @@ export class FakeSource implements SyncSource {
     return [];
   }
 
+  detailCalls: Array<{ id: number; comments: number }> = [];
+  revisionCalls: number[] = [];
+  writes: Array<{ id: number; state: string; rev?: number; comment?: string }> = [];
+  /** What `viewWorkItem` answers for any card. */
+  view: Record<string, unknown> = {
+    description: 'Descrição',
+    children: [{ id: 1, WorkItemType: 'Task', State: 'To Do', Title: 'Filha' }],
+    links: [{ link: 'Related', id: 9, WorkItemType: 'Bug', State: 'New', Title: 'Parente' }],
+    images: ['https://dev.azure.com/acme/_apis/wit/attachments/abc?fileName=a.png'],
+    attachments: [{ name: 'a.pdf', url: 'https://dev.azure.com/acme/_apis/wit/attachments/def' }],
+    comments: { total: 1, shown: 1, items: [{ id: 5, author: 'Ana', date: '2026-10-30T10:00:00.000Z', text: 'Oi' }] },
+  };
+  revisions: unknown[] = [];
+
+  async fetchDetail(id: number, comments: number): Promise<Record<string, unknown>> {
+    if (this.failWith) throw this.failWith;
+    this.detailCalls.push({ id, comments });
+    return this.view;
+  }
+
+  async fetchRevisions(id: number): Promise<unknown[]> {
+    if (this.failWith) throw this.failWith;
+    this.revisionCalls.push(id);
+    return this.revisions;
+  }
+
+  /** Applies the state like the API: a `test /rev` that no longer holds refuses the whole write. */
+  async changeState(change: { id: number; state: string; rev?: number; comment?: string }, fields: string[]): Promise<RawItem> {
+    if (this.failWith) throw this.failWith;
+    this.writes.push(change);
+    const current = this.items.get(change.id);
+    if (!current) throw Object.assign(new Error(`Work item ${change.id} not found`), { statusCode: 404 });
+    if (change.rev !== undefined && change.rev !== current.rev) {
+      throw Object.assign(new Error('TF26071: This work item has been changed by someone else since you opened it.'), { statusCode: 412 });
+    }
+    const saved: RawItem = { id: change.id, rev: current.rev + 1, fields: { ...current.fields, 'System.State': change.state } };
+    this.items.set(saved.id, saved);
+    return { ...saved, fields: Object.fromEntries(Object.entries(saved.fields).filter(([ref]) => fields.includes(ref))) };
+  }
+
   async fetchItems(ids: number[], fields: string[]): Promise<RawItem[]> {
     if (this.failWith) throw this.failWith;
     this.fetches.push({ ids, fields });

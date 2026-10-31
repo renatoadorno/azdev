@@ -63,4 +63,13 @@ export interface SyncSource {
   runQuery(wiql: string, timePrecision?: boolean): Promise<number[]>;
   /** Missing or unreadable ids are left out. */
   fetchItems(ids: number[], fields: string[]): Promise<RawItem[]>;
+  /** One card in full: description, criteria, relations and the latest comments (`WorkItemViewService.viewWorkItem`). */
+  fetchDetail(id: number, comments: number): Promise<Record<string, unknown>>;
+  /** Every revision, oldest first. */
+  fetchRevisions(id: number): Promise<unknown[]>;
+  /**
+   * Writes the state; `rev` makes the write fail when the card moved on. Answers
+   * with the card as saved, reduced to `fields`.
+   */
+  changeState(change: { id: number; state: string; rev?: number; comment?: string }, fields: string[]): Promise<RawItem>;
 }

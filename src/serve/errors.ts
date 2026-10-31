@@ -20,6 +20,8 @@ const OFFLINE_CODES = [
 /** "This work item has been changed by someone else since you opened it" — a failed `test /rev`. */
 const REVISION_CONFLICT = /TF26071/;
 
+const INVALID_STATE = /TF401320|^State ".*" is not valid for /;
+
 interface UpstreamError {
   statusCode?: number;
   code?: string;
@@ -32,13 +34,17 @@ function withHint(error: ServeError, hint?: string): ServeError {
 
 /** Any failure → the `{kind, message, hint}` a client shows instead of a stack trace. */
 export function toServeError(err: unknown): ServeError {
-  if (err instanceof ProtocolError) return withHint({ kind: err.kind, message: err.message }, err.hint);
+  if (err instanceof ProtocolError) {
+    return { ...withHint({ kind: err.kind, message: err.message }, err.hint), ...(err.details ? { details: err.details } : {}) };
+  }
   if (err instanceof ConfigError) return withHint({ kind: err.kind, message: err.message }, err.hint);
 
   const e = (err ?? {}) as UpstreamError;
   const message = e.message ?? String(err);
   const status = e.statusCode;
 
+  // The API's rule error for a state the type does not allow from here, or WorkItemService's explanation of it.
+  if (INVALID_STATE.test(message)) return { kind: 'invalid_state', message };
   if (status === 401) return { kind: 'needs_login', message, hint: AUTH_FAILED_HINT.join('\n') };
   if (status === 403) return { kind: 'forbidden', message };
   if (status === 404) return { kind: 'not_found', message };

@@ -24,6 +24,7 @@ export class ProtocolError extends Error {
     message: string,
     readonly id: number | null = null,
     readonly hint?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ProtocolError';

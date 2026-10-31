@@ -224,6 +224,8 @@ export interface UpdateWorkItemCommentParams extends AddWorkItemCommentParams {
 export interface UpdateWorkItemStateParams {
   id: number;
   state: string;
+  /** Refuses the write when the card is no longer at this revision. */
+  rev?: number;
   comment?: string;
 }
 

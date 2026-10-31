@@ -1,7 +1,10 @@
-import type { Card, ItemFilter, ItemsResult, Meta, ServeError, Status } from '../interfaces/Serve';
+import type { Card, CardDetail, ItemFilter, ItemsResult, Meta, ServeError, Status } from '../interfaces/Serve';
 import type { RawItem, SyncSource } from '../interfaces/Sync';
+import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../services/history';
 import { buildWiql } from '../services/queryBuilder';
 import { createCardContext, itemFields, toCard } from './cards';
+import { DEFAULT_COMMENTS, LruCache, detailKey, toCardDetail } from './detail';
+import { planStateChange } from './stateChange';
 import { toServeError } from './errors';
 import { matchContext, matchesFilter, queryCards, resolveSprintPaths, type ParsedQuery } from './filters';
 import { LIVE_LIMIT, filterKey, filterWiql, isTextOnly } from './liveQuery';
@@ -63,6 +66,7 @@ function parentOf(item: RawItem): number | undefined {
 export class SyncEngine {
   private readonly store = new ItemStore();
   private readonly tempScopes = new TempScopes();
+  private readonly details = new LruCache<CardDetail>();
   private source: SyncSource;
   private meta: Meta | null = null;
   private metaFetchedAt = 0;
@@ -532,6 +536,42 @@ export class SyncEngine {
     const [item] = await this.fetch([id]);
     if (!item) throw notFound(id);
     return toCard(item, createCardContext(this.meta!, this.store, this.now()));
+  }
+
+  /** A card with its description, comments, children and links; the same answer until the card changes. */
+  async detail(id: number, comments = DEFAULT_COMMENTS, history = false): Promise<CardDetail> {
+    await this.ready();
+    const card = await this.card(id);
+    const key = detailKey(card, comments, history);
+    const cached = this.details.get(key);
+    if (cached) return cached;
+
+    const view = await this.call(() => this.source.fetchDetail(id, comments));
+    const revisions = history ? revisionTimeline(await this.call(() => this.source.fetchRevisions(id)), DEFAULT_HISTORY_FIELDS) : undefined;
+    const detail = toCardDetail(card, view, revisions);
+    this.details.set(key, detail);
+    return detail;
+  }
+
+  /**
+   * Moves a card to a state its type allows from the current one. The write is
+   * refused by Azure DevOps when `rev` is behind; what it saved goes into the
+   * cache at once, so watchers hear it before the next sync.
+   */
+  async setState(change: { id: number; state: string; rev?: number; comment?: string }): Promise<Card> {
+    await this.ready();
+    const card = await this.card(change.id);
+    const plan = planStateChange(this.meta!, card, change.state);
+    if (plan.same) return card;
+
+    const saved = await this.call(() => this.source.changeState({ ...change, state: plan.state }, this.fields));
+    const updated = toCard(saved, createCardContext(this.meta!, this.store, this.now()));
+    this.store.upsert([saved]);
+    // The new state may take the card out of every scope (Done leaves "mine, open").
+    const keep = itemsToKeep(this.store.all(), this.scopes, scopeContext(this.meta!), this.tempScopes.memberIds());
+    this.store.remove(this.store.ids().filter(stored => !keep.has(stored)));
+    this.notify();
+    return updated;
   }
 
   cacheStatus(): Status['cache'] {

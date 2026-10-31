@@ -1,3 +1,4 @@
+import { DEFAULT_COMMENTS, MAX_COMMENTS } from './detail';
 import type { SyncEngine } from './engine';
 import { parseItemsQuery } from './filters';
 import { ProtocolError } from './protocol';
@@ -19,6 +20,15 @@ function optionalFlag(params: Record<string, unknown>, name: string): boolean {
   return value === true;
 }
 
+function boundedInteger(params: Record<string, unknown>, name: string, min: number, max: number, fallback: number): number {
+  const value = params[name];
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || (value as number) < min || (value as number) > max) {
+    throw new ProtocolError('invalid_request', `"${name}" must be an integer from ${min} to ${max}`);
+  }
+  return value as number;
+}
+
 /**
  * Methods answered from the cache. Params are checked before the engine is asked
  * for, so a malformed request fails the same way with or without a login.
@@ -35,6 +45,26 @@ export function dataHandlers(engine: () => SyncEngine, subscriptions: Subscripti
       const cache = engine();
       await cache.ready();
       return { card: await cache.card(id) };
+    },
+    'items.detail': params => {
+      const raw = params as unknown as Record<string, unknown>;
+      const id = requireId(raw);
+      const comments = boundedInteger(raw, 'comments', 0, MAX_COMMENTS, DEFAULT_COMMENTS);
+      return engine().detail(id, comments, optionalFlag(raw, 'history'));
+    },
+    'items.setState': async params => {
+      const raw = params as unknown as Record<string, unknown>;
+      const id = requireId(raw);
+      if (typeof raw.state !== 'string' || !raw.state.trim()) throw new ProtocolError('invalid_request', '"state" must be a state name');
+      if (raw.comment !== undefined && typeof raw.comment !== 'string') throw new ProtocolError('invalid_request', '"comment" must be text');
+      const rev = raw.rev === undefined ? undefined : boundedInteger(raw, 'rev', 1, Number.MAX_SAFE_INTEGER, 0);
+      const card = await engine().setState({
+        id,
+        state: raw.state,
+        ...(rev !== undefined ? { rev } : {}),
+        ...(raw.comment ? { comment: raw.comment as string } : {}),
+      });
+      return { card };
     },
     'items.watch': async (params, conn) => {
       const query = parseItemsQuery(params as Record<string, unknown>);
