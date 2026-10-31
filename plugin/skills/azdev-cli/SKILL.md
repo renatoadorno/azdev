@@ -5,7 +5,7 @@ description: "Azure DevOps work items through the azdev CLI. Use when the user r
 
 # azdev CLI
 
-`azdev` is the Azure DevOps CLI on this machine — 60 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`.
+`azdev` is the Azure DevOps CLI on this machine — 60 subcommands across 8 groups (workitem, sprint, board, project, metadata, flow, stats, config). Output defaults to toon, compact and made for agents; keep it unless the user wants `--json` or `--markdown`. `--project <name>` targets another project. Flags are camelCase: `--assignedTo`, `--descriptionFile`, `--dryRun`. `azdev serve` is a separate local daemon for long-lived clients; reading and writing cards goes through the commands below.
 
 ## Preflight
 

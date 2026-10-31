@@ -76,13 +76,16 @@ src/
                              CLI); comments mentioning me (@RecentMentions candidates,
                              comments paged); watch list rows for `workitem watch`
     FlowService.ts         — flow status/apply over FlowsFile
-    SyncService.ts         — the serve cache's reads: fetchMeta (types, team + project sprints,
-                             members, tags, areas, field refs, me), runQuery, fetchItems (raw,
-                             identities slimmed to name + account)
+    SyncService.ts         — extends WorkItemViewService; the serve cache's reads: fetchMeta
+                             (types, team + project sprints, members, tags, areas, field refs,
+                             me), runQuery, fetchItems (raw, identities slimmed to name +
+                             account), plus fetchDetail, fetchRevisions and changeState (the
+                             state write carries `rev` as a `test /rev` op)
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
                              cycle time, aging; past board states through WIQL ASOF
     *Service.ts     — Other domain services extending AzureDevOpsService
     Pure modules (no network, unit-tested):
+    rawItem.ts       — toRawItem / slimIdentities: API work item → the cache's RawItem
     workItemUtils.ts — slimWorkItem, WIQL filters/escape, tags, patch ops, constants
     iterations.ts    — classification node flattening + matchIteration
     richText.ts      — HTML/Markdown field → text, attachment url parsing
@@ -100,7 +103,8 @@ src/
     queryBuilder.ts  — query flags → WIQL, relative dates (7d/2w), [short] names in --where
     stats.ts         — state buckets from state categories, totals, working days, pace,
                        percentiles, weeks, aging, carry-over
-  serve/            — `azdev serve`, the local daemon for the Herdr mod (later the CLI); in progress
+  serve/            — `azdev serve`, the local daemon for the Herdr mod (later the CLI);
+                      protocol for client authors in docs/serve.md
     protocol.ts     — NDJSON over TCP: LineSplitter (splits bytes on 0x0A before decoding,
                       so UTF-8 survives chunk cuts), parseRequest against METHODS, message
                       builders, ProtocolError, OutboundQueue (socket writes can be partial;
@@ -117,10 +121,31 @@ src/
     control.ts      — start (detached, swaps a daemon of another version) / stop / status
     schema.ts       — describeProtocol() for schema.get
     engine.ts       — SyncEngine: meta (12 h TTL, re-read on the first sync of a run), full sync
-                      of the scopes + parents/children, snapshot, cards derived per store seq,
-                      concurrent callers share one run; ready() waits only when empty
-    handlers.ts     — meta.get, items.list, items.get, sync.run over the engine; requireId
+                      of the scopes + parents/children, incremental sync (ChangedDate window
+                      from the instant the last query began, minus 2 min; over 1000 ids or a
+                      changed scope set → full), snapshot, cards derived per store seq,
+                      concurrent callers share one run; ready() waits only when empty and
+                      refreshes behind the answer by schedule.ts. query() answers from the
+                      cache or live (temporary scope); detail() (LRU) and setState();
+                      a 401 re-reads the credential once (onUnauthorized); backoff/pause
+                      state for the schedule; onChange listeners (watchers, status event)
+    scheduler.ts    — SyncScheduler: one timer for the next planned sync, poked when a watch
+                      starts/ends or a sync ends; statusFingerprint() for the status event
+    subscriptions.ts — items.watch: one entry per sub with the fingerprint of its last result,
+                      push only on change, cleanup on unwatch and conn.onClose; followEngine()
+                      (the name watch.ts is taken in services/)
+    handlers.ts     — meta.get, items.list/get/detail/setState/watch/unwatch, sync.run over
+                      the engine; requireId; params are checked before the engine is asked for
     Pure modules (no network, unit-tested):
+    schedule.ts     — intervals (60 s incremental, 30 min full, 30 s stale), nextSync(),
+                      refreshOnRequest(), backoffDelay() (30 s → 10 min), retryAfterMs()
+    liveQuery.ts    — ItemFilter → WIQL (queryConditions + bucketCondition for open), isTextOnly,
+                      filterKey; LIVE_LIMIT 1000
+    tempScopes.ts   — the live queries' scopes: members, lastUsedAt, 30 min expiry
+    stateChange.ts  — planStateChange(): validates against meta.types[type].transitions[state],
+                      canonical name, invalid_state with details {current, validStates}
+    detail.ts       — viewWorkItem output → CardDetail, LruCache, detailKey (id, rev,
+                      commentCount, comments, history)
     meta.ts         — RawMeta → Meta (types with states/transitions, sprints merged with the
                       team's timeframe); currentSprint / previousSprint / stateLookup
     cards.ts        — RawItem → Card; CARD_FIELD_REFS; itemFields() asks only for fields the
@@ -211,7 +236,9 @@ plugin/
   skills/setup/              — /azdev:setup: binary matching the plugin version, org, project, token
 ```
 
-`test/plugin.test.ts` enforces what `claude plugin validate` does not check:
+`test/plugin.test.ts` enforces what `claude plugin validate` does not check (`serve` has no
+subcommands, so it is checked apart: its flags and each of `SERVE_ACTIONS` need a bullet in
+`references/commands.md`, and `docs/commands.md` must name them):
 - `package.json`, `plugin.json` and the marketplace entry carry the same version — bump all three together;
 - strict YAML frontmatter in every `SKILL.md` (an unquoted `: ` silently drops name and description);
 - every `azdev <group> <sub>` mentioned in a skill exists, and the subcommand count in `azdev-cli` is right;

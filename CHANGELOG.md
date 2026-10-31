@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `serve [start|stop|status] [--port] [--idleExit]`: a local daemon with a cache
+  of your cards for long-lived clients, speaking NDJSON over TCP on 127.0.0.1
+  (protocol in `docs/serve.md`). It keeps your open cards, the current sprint and
+  the watched cards synced (incremental every 60 s while someone watches, full
+  every 30 min), answers other queries live, pushes `items.watch` results only
+  when they change, and reads a card in full (`items.detail`) or moves it to a
+  state its type allows (`items.setState`, guarded by the card's revision).
+  A second daemon exits `75`.
+
 ## [0.10.0] - 2026-10-30
 
 Move cards from one story to another.
