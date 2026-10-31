@@ -40,6 +40,42 @@ export function configFiles(): Record<'config' | 'flows' | 'conventions' | 'temp
   };
 }
 
+export const CONFIG_ERROR_KINDS = ['config_missing', 'config_invalid', 'needs_login'] as const;
+export type ConfigErrorKind = (typeof CONFIG_ERROR_KINDS)[number];
+
+/**
+ * A config the commands cannot run with. The CLI prints `lines` and exits 2; the
+ * daemon keeps running and reports `kind`, so an expired token is not fatal there.
+ */
+export class ConfigError extends Error {
+  constructor(
+    readonly kind: ConfigErrorKind,
+    readonly lines: string[],
+  ) {
+    super(lines[0]);
+    this.name = 'ConfigError';
+  }
+
+  /** What to do about it: every line after the first. */
+  get hint(): string {
+    return this.lines.slice(1).join('\n');
+  }
+}
+
+function exitOnConfigError(err: unknown): never {
+  if (!(err instanceof ConfigError)) throw err;
+  for (const line of err.lines) console.error(line);
+  process.exit(2);
+}
+
+function orExit<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (err) {
+    exitOnConfigError(err);
+  }
+}
+
 interface RawCliConfig {
   orgUrl?: string;
   project?: string;
@@ -55,8 +91,8 @@ interface RawCliConfig {
   password?: string;
 }
 
-/** Reads the config file. Returns null when it does not exist; exits 2 when it is malformed. */
-export function readConfigFile(): RawCliConfig | null {
+/** The config file, or null when it does not exist; throws ConfigError when it is malformed. */
+function parseConfigFile(): RawCliConfig | null {
   let content: string;
   try {
     content = fs.readFileSync(configPath(), 'utf-8');
@@ -67,20 +103,30 @@ export function readConfigFile(): RawCliConfig | null {
   try {
     return JSON.parse(content) as RawCliConfig;
   } catch (err) {
-    console.error(`Config file at ${configPath()} is not valid JSON: ${(err as Error).message}`);
-    console.error('Fix the file or delete it and reconfigure.');
-    process.exit(2);
+    throw new ConfigError('config_invalid', [
+      `Config file at ${configPath()} is not valid JSON: ${(err as Error).message}`,
+      'Fix the file or delete it and reconfigure.',
+    ]);
   }
+}
+
+function parseRequiredConfigFile(): RawCliConfig {
+  const raw = parseConfigFile();
+  if (raw) return raw;
+  throw new ConfigError('config_missing', [
+    `Config file not found at ${configPath()}.`,
+    "Run 'azdev config set orgUrl ...' to configure.",
+  ]);
+}
+
+/** Reads the config file. Returns null when it does not exist; exits 2 when it is malformed. */
+export function readConfigFile(): RawCliConfig | null {
+  return orExit(parseConfigFile);
 }
 
 /** Same as readConfigFile, but a missing file is fatal. */
 export function requireConfigFile(): RawCliConfig {
-  const raw = readConfigFile();
-  if (raw) return raw;
-
-  console.error(`Config file not found at ${configPath()}.`);
-  console.error("Run 'azdev config set orgUrl ...' to configure.");
-  process.exit(2);
+  return orExit(parseRequiredConfigFile);
 }
 
 function writeConfigFile(data: Record<string, unknown>): void {
@@ -129,7 +175,7 @@ async function migrateInlineSecrets(raw: Record<string, unknown>, orgUrl: string
 
   if (migrated.length === 0) return;
 
-  const onDisk = readConfigFile() as Record<string, unknown>;
+  const onDisk = parseConfigFile() as Record<string, unknown>;
   for (const key of migrated) delete onDisk[key];
   writeConfigFile(onDisk);
 
@@ -141,10 +187,11 @@ async function requireSecret(kind: SecretKind, orgUrl: string): Promise<string> 
   if (value) return value;
 
   const key = configKeyFor(kind);
-  console.error(`No ${key} found for ${orgUrl}.`);
-  if (error) console.error(`Keychain lookup failed: ${error}`);
-  console.error(`Store it with 'azdev config set ${key} <value>', or set ${envVarFor(kind)}.`);
-  process.exit(2);
+  throw new ConfigError('needs_login', [
+    `No ${key} found for ${orgUrl}.`,
+    ...(error ? [`Keychain lookup failed: ${error}`] : []),
+    `Store it with 'azdev config set ${key} <value>', or set ${envVarFor(kind)}.`,
+  ]);
 }
 
 const RICH_TEXT_FORMATS = ['html', 'markdown'] as const;
@@ -152,9 +199,10 @@ const RICH_TEXT_FORMATS = ['html', 'markdown'] as const;
 function parseConfiguredFormat(value?: string): AzureDevOpsConfig['richTextFormat'] {
   if (value === undefined) return undefined;
   if ((RICH_TEXT_FORMATS as readonly string[]).includes(value)) return value as AzureDevOpsConfig['richTextFormat'];
-  console.error(`Config richTextFormat must be 'html' or 'markdown' (got '${value}').`);
-  console.error("Fix it with 'azdev config set richTextFormat markdown' or 'azdev config unset richTextFormat'.");
-  process.exit(2);
+  throw new ConfigError('config_invalid', [
+    `Config richTextFormat must be 'html' or 'markdown' (got '${value}').`,
+    "Fix it with 'azdev config set richTextFormat markdown' or 'azdev config unset richTextFormat'.",
+  ]);
 }
 
 function requireOrgUrl(): string {
@@ -166,14 +214,16 @@ function requireOrgUrl(): string {
   process.exit(2);
 }
 
-export async function loadCliConfig(): Promise<AzureDevOpsConfig> {
-  const raw = requireConfigFile();
+/** The config the commands run with; throws ConfigError instead of exiting, for the daemon. */
+export async function resolveCliConfig(): Promise<AzureDevOpsConfig> {
+  const raw = parseRequiredConfigFile();
   warnIfWorldReadable();
 
   if (!raw.orgUrl || !raw.project) {
-    console.error('Config is missing required fields: orgUrl and project.');
-    console.error("Run 'azdev config set orgUrl ...' and 'azdev config set project ...' to configure.");
-    process.exit(2);
+    throw new ConfigError('config_invalid', [
+      'Config is missing required fields: orgUrl and project.',
+      "Run 'azdev config set orgUrl ...' and 'azdev config set project ...' to configure.",
+    ]);
   }
 
   await migrateInlineSecrets(raw as Record<string, unknown>, raw.orgUrl);
@@ -204,6 +254,15 @@ export async function loadCliConfig(): Promise<AzureDevOpsConfig> {
   }
 
   return config;
+}
+
+/** resolveCliConfig for the CLI: a config it cannot run with prints why and exits 2. */
+export async function loadCliConfig(): Promise<AzureDevOpsConfig> {
+  try {
+    return await resolveCliConfig();
+  } catch (err) {
+    exitOnConfigError(err);
+  }
 }
 
 export async function writeCliConfig(key: string, value: unknown): Promise<void> {

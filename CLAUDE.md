@@ -50,6 +50,8 @@ src/
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
     Flows.ts        — flows.json schema (FlowsFile/FlowDefinition/FlowCard) and flow params
     Stats.ts        — stats params (StatsFilters, CarryoverRules from flows.json)
+    Serve.ts        — `azdev serve` contract: NDJSON messages, METHODS and MethodMap,
+                      Card/Meta/ItemFilter/Status, ERROR_KINDS; PROTOCOL_VERSION
     *.ts            — Domain-specific param interfaces per command group
   services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
     AzureDevOpsService.ts  — Base class: connection/auth, plus what every service shares:
@@ -94,12 +96,20 @@ src/
     queryBuilder.ts  — query flags → WIQL, relative dates (7d/2w), [short] names in --where
     stats.ts         — state buckets from state categories, totals, working days, pace,
                        percentiles, weeks, aging, carry-over
+  serve/            — `azdev serve`, the local daemon for the Herdr mod (later the CLI); in progress
+    protocol.ts     — NDJSON over TCP: LineSplitter (splits bytes on 0x0A before decoding,
+                      so UTF-8 survives chunk cuts), parseRequest against METHODS, message
+                      builders, ProtocolError
+    errors.ts       — any failure → ServeError {kind, message, hint}: ConfigError, HTTP
+                      status (401 → needs_login, 409/412/TF26071 → conflict), socket codes
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
                       subcommand shares (load config, apply --project, format, handle errors)
     config.ts       — configPath() / loadCliConfig() / writeCliConfig() / unsetCliConfig()
                       Non-secret config → ~/.config/azdev/config.json (mode 0600)
+                      resolveCliConfig() throws ConfigError (config_missing, config_invalid,
+                      needs_login) for the daemon; loadCliConfig() prints it and exits 2
     secrets.ts      — Bun.secrets wrapper: resolveSecret/storeSecret/deleteSecret/redactSecrets
                       Credentials live in the OS keychain (service com.azdev.cli)
     flows.ts        — flowsPath() (next to config.json) / loadFlows() (exit 2 when missing/invalid)
@@ -107,7 +117,8 @@ src/
                       default, --template, --noTemplate), readCardDescriptions() for flow apply
     inboxState.ts   — inbox.json next to config.json: last check per project (read/save)
     watchState.ts   — watch.json next to config.json: readWatch / updateWatch (atomic rename)
-    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
+    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit;
+                      AUTH_FAILED_HINT is shared with serve/errors.ts
     parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
     warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
