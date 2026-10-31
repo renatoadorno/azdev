@@ -31,7 +31,7 @@ export function categoriesFrom(types: TypeWithStates[]): StateCategories {
   return categories;
 }
 
-const BUCKET_OF_CATEGORY: Record<string, Bucket> = {
+export const BUCKET_OF_CATEGORY: Record<string, Bucket> = {
   Proposed: 'todo',
   InProgress: 'doing',
   Resolved: 'doing',

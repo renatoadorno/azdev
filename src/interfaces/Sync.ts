@@ -59,6 +59,8 @@ export interface RawMeta {
 /** The Azure DevOps reads the cache needs; faked in tests. */
 export interface SyncSource {
   fetchMeta(): Promise<RawMeta>;
+  /** Who the credential belongs to: one cheap call, to check a snapshot's owner before showing it. */
+  fetchIdentity(): Promise<Identity>;
   /** WIQL → ids; `timePrecision` compares dates to the instant. */
   runQuery(wiql: string, timePrecision?: boolean): Promise<number[]>;
   /** Missing or unreadable ids are left out. */

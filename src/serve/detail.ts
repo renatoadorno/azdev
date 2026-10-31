@@ -78,6 +78,10 @@ export class LruCache<V> {
     this.entries.set(key, value);
     if (this.entries.size > this.capacity) this.entries.delete(this.entries.keys().next().value!);
   }
+
+  clear(): void {
+    this.entries.clear();
+  }
 }
 
 /** A card that changed (another rev) or got a comment is another entry; so is another way of asking. */

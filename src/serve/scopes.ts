@@ -1,8 +1,9 @@
 import type { ItemFilter, Meta } from '../interfaces/Serve';
 import type { RawItem } from '../interfaces/Sync';
-import { bucketCondition, bucketOf, categoriesFrom, type Bucket, type StateCategories } from '../services/stats';
+import { bucketCondition, bucketOf, categoriesFrom, type StateCategories } from '../services/stats';
 import { wiqlEscape } from '../services/workItemUtils';
-import { toPerson } from './cards';
+import { CARD_FIELD_REFS, parentOf, toPerson } from './cards';
+import { OPEN_BUCKETS } from './categories';
 import { currentSprint } from './meta';
 
 /** What the cache keeps synced: each rule is both a WIQL condition and a local test. */
@@ -19,8 +20,6 @@ export interface ScopeContext {
   typeNames: Map<string, string>;
 }
 
-const OPEN_BUCKETS: Bucket[] = ['todo', 'doing'];
-const PARENT_FIELD = 'System.Parent';
 
 export function scopeContext(meta: Meta): ScopeContext {
   return {
@@ -51,7 +50,7 @@ export function scopeCondition(rule: ScopeRule, context: ScopeContext): string {
       return `[System.IterationPath] = '${wiqlEscape(rule.path)}'`;
     case 'watch': {
       const ids = rule.ids.join(', ');
-      return `([System.Id] IN (${ids}) OR [System.Parent] IN (${ids}))`;
+      return `([System.Id] IN (${ids}) OR [${CARD_FIELD_REFS.parent}] IN (${ids}))`;
     }
   }
 }
@@ -68,8 +67,8 @@ export function matchesRule(item: RawItem, rule: ScopeRule, context: ScopeContex
     case 'sprint':
       return String(item.fields['System.IterationPath'] ?? '').toLowerCase() === rule.path.toLowerCase();
     case 'watch': {
-      const parent = item.fields[PARENT_FIELD];
-      return rule.ids.includes(item.id) || (typeof parent === 'number' && rule.ids.includes(parent));
+      const parent = parentOf(item);
+      return rule.ids.includes(item.id) || (parent !== undefined && rule.ids.includes(parent));
     }
   }
 }
@@ -84,8 +83,8 @@ export function itemsToKeep(items: RawItem[], scopes: Scope[], context: ScopeCon
   for (const id of extraMembers) members.add(id);
   const keep = new Set(members);
   for (const item of items) {
-    const parent = item.fields[PARENT_FIELD];
-    if (typeof parent !== 'number') continue;
+    const parent = parentOf(item);
+    if (parent === undefined) continue;
     if (members.has(item.id)) keep.add(parent);
     if (members.has(parent)) keep.add(item.id);
   }

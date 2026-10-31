@@ -1,14 +1,12 @@
 import type { ItemFilter, Meta } from '../interfaces/Serve';
 import { buildWiql, queryConditions } from '../services/queryBuilder';
-import { bucketCondition, categoriesFrom, type Bucket } from '../services/stats';
+import { bucketCondition, categoriesFrom } from '../services/stats';
 import { wiqlEscape } from '../services/workItemUtils';
+import { CLOSED_BUCKETS, OPEN_BUCKETS } from './categories';
 import { parseChangedSince } from './filters';
 
 /** The most ids a live query brings back; the rest is cut by the newest change. */
 export const LIVE_LIMIT = 1000;
-
-const OPEN: Bucket[] = ['todo', 'doing'];
-const CLOSED: Bucket[] = ['done', 'removed'];
 
 /** Values of one key are OR'ed, so each becomes its own condition and the group is joined. */
 function anyOf(conditions: string[]): string | undefined {
@@ -47,7 +45,7 @@ export function filterConditions(filter: ItemFilter, meta: Meta, sprintPaths: st
   if (filter.open !== undefined) {
     const categories = categoriesFrom(meta.types);
     const typeNames = new Map(meta.types.map(t => [t.name.toLowerCase(), t.name]));
-    conditions.push(bucketCondition(categories, filter.open ? OPEN : CLOSED, typeNames));
+    conditions.push(bucketCondition(categories, filter.open ? OPEN_BUCKETS : CLOSED_BUCKETS, typeNames));
   }
   if (filter.type?.length) conditions.push(...queryConditions({ types: filter.type }));
   conditions.push(anyOf((filter.tag ?? []).map(tag => queryConditions({ tags: [tag] })[0]!)));

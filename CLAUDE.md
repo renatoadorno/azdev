@@ -78,7 +78,8 @@ src/
     FlowService.ts         — flow status/apply over FlowsFile
     SyncService.ts         — extends WorkItemViewService; the serve cache's reads: fetchMeta
                              (types, team + project sprints, members, tags, areas, field refs,
-                             me), runQuery, fetchItems (raw, identities slimmed to name +
+                             me), fetchIdentity (who the credential is, one call), runQuery,
+                             fetchItems (raw, identities slimmed to name +
                              account), plus fetchDetail, fetchRevisions and changeState (the
                              state write carries `rev` as a `test /rev` op)
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
@@ -117,13 +118,16 @@ src/
     runtime.ts      — serve.json (port, token, pid; 0600, atomic) next to config.json, flock lock
                       via bun:ffi (kernel frees it on kill -9), cacheDir() (AZDEV_CACHE_DIR)
     daemon.ts       — runDaemon: lock (exit 75 if taken), credential re-read on hello while
-                      missing, idle exit, exits when the compiled binary on disk is replaced
+                      missing, idle exit, exits within 30 s when the compiled binary on disk is
+                      replaced, even with clients connected (they reconnect through serve start)
     control.ts      — start (detached, swaps a daemon of another version) / stop / status
     schema.ts       — describeProtocol() for schema.get
     engine.ts       — SyncEngine: meta (12 h TTL, re-read on the first sync of a run), full sync
                       of the scopes + parents/children, incremental sync (ChangedDate window
                       from the instant the last query began, minus 2 min; over 1000 ids or a
-                      changed scope set → full), snapshot, cards derived per store seq,
+                      changed scope set → full), snapshot (shown only after fetchIdentity
+                      confirms the same login; another login wipes it; offline it is shown
+                      stale), cards derived per store seq,
                       concurrent callers share one run; ready() waits only when empty and
                       refreshes behind the answer by schedule.ts. query() answers from the
                       cache or live (temporary scope); detail() (LRU) and setState();
@@ -146,10 +150,13 @@ src/
                       canonical name, invalid_state with details {current, validStates}
     detail.ts       — viewWorkItem output → CardDetail, LruCache, detailKey (id, rev,
                       commentCount, comments, history)
+    categories.ts   — what "open" means, in one place: closed state categories, isClosedCategory,
+                      OPEN/CLOSED buckets derived from stats' BUCKET_OF_CATEGORY
     meta.ts         — RawMeta → Meta (types with states/transitions, sprints merged with the
                       team's timeframe); currentSprint / previousSprint / stateLookup
-    cards.ts        — RawItem → Card; CARD_FIELD_REFS; itemFields() asks only for fields the
-                      project has (an unknown field fails the whole batch)
+    cards.ts        — RawItem → Card; CARD_FIELD_REFS; parentOf (the one reader of the parent
+                      field); itemFields() asks only for fields the project has (an unknown
+                      field fails the whole batch)
     store.ts        — ItemStore: upsert by rev, remove, child index, seq
     scopes.ts       — mine-open / current sprint / watch: WIQL condition and the same test run
                       locally (itemsToKeep adds parents and children); isCovered for live queries

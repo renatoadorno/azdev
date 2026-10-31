@@ -1,8 +1,6 @@
 import type { Meta, SprintInfo, StateInfo, TypeInfo } from '../interfaces/Serve';
 import type { RawMeta, RawSprint, RawType } from '../interfaces/Sync';
-
-/** A state the process does not describe is treated as not started. */
-const UNKNOWN_CATEGORY = 'Proposed';
+import { UNKNOWN_CATEGORY } from './categories';
 
 function toTypeInfo(type: RawType): TypeInfo {
   const transitions: Record<string, string[]> = {};

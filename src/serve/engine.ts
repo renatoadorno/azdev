@@ -2,7 +2,7 @@ import type { Card, CardDetail, ItemFilter, ItemsResult, Meta, ServeError, Statu
 import type { RawItem, SyncSource } from '../interfaces/Sync';
 import { DEFAULT_HISTORY_FIELDS, revisionTimeline } from '../services/history';
 import { buildWiql } from '../services/queryBuilder';
-import { createCardContext, itemFields, toCard } from './cards';
+import { CARD_FIELD_REFS, createCardContext, itemFields, parentOf, toCard } from './cards';
 import { DEFAULT_COMMENTS, LruCache, detailKey, toCardDetail } from './detail';
 import { planStateChange } from './stateChange';
 import { toServeError } from './errors';
@@ -53,11 +53,6 @@ function notFound(id: number): Error {
   return Object.assign(new Error(`Work item ${id} not found`), { statusCode: 404 });
 }
 
-function parentOf(item: RawItem): number | undefined {
-  const parent = item.fields['System.Parent'];
-  return typeof parent === 'number' ? parent : undefined;
-}
-
 /**
  * The daemon's cache: metadata, the items of the tracked scopes (plus their
  * parents and children) and the cards derived from them. Concurrent callers of
@@ -75,6 +70,8 @@ export class SyncEngine {
   private syncedAt: string | null = null;
   private fullSyncedAt: string | null = null;
   private syncedThisRun = false;
+  /** A snapshot read from disk whose login has not been checked against the credential yet. */
+  private ownerUnverified = false;
   /** The instant the last sync's first query began: the next incremental window starts there. */
   private syncMark: number | null = null;
   private runSyncAt: number | null = null;
@@ -174,8 +171,43 @@ export class SyncEngine {
     this.store.upsert(snapshot.items);
     // What the snapshot was kept for, so a query is answered from it instead of going live.
     this.scopes = defaultScopes(snapshot.meta, this.options.watched?.() ?? [], this.now());
+    this.ownerUnverified = true;
     this.options.log?.('snapshot-loaded', { items: snapshot.items.length, savedAt: snapshot.savedAt });
     return true;
+  }
+
+  /**
+   * A snapshot is shown only once the credential is known to belong to the same
+   * login: a token swapped for another account must not show the previous one's
+   * cards. Offline nothing can be checked, and the snapshot, marked stale, is the
+   * best there is; the check runs again on the next request.
+   */
+  verifySnapshotOwner(): Promise<void> {
+    if (!this.ownerUnverified) return Promise.resolve();
+    return this.once('owner', async () => {
+      let me: { id: string };
+      try {
+        me = await this.call(() => this.source.fetchIdentity());
+      } catch (err) {
+        if (toServeError(err).kind === 'offline') return;
+        throw err;
+      }
+      if (this.meta && this.meta.me.id !== me.id) this.forget();
+      this.ownerUnverified = false;
+    });
+  }
+
+  /** Drops everything cached for another login, so the next request syncs from scratch. */
+  private forget(): void {
+    this.store.remove(this.store.ids());
+    this.details.clear();
+    this.meta = null;
+    this.metaFetchedAt = 0;
+    this.scopes = [];
+    this.syncedAt = null;
+    this.fullSyncedAt = null;
+    this.syncMark = null;
+    this.options.log?.('snapshot-discarded', { reason: 'another login' });
   }
 
   saveSnapshot(): void {
@@ -200,6 +232,7 @@ export class SyncEngine {
   }
 
   async getMeta(): Promise<Meta> {
+    await this.verifySnapshotOwner();
     if (this.meta && this.now().getTime() - this.metaFetchedAt < META_TTL_MS) return this.meta;
     if (this.meta) {
       void this.refreshMeta().catch(() => {});
@@ -235,7 +268,7 @@ export class SyncEngine {
     const ids: number[] = [];
     for (let i = 0; i < parentIds.length; i += IN_CHUNK) {
       const chunk = parentIds.slice(i, i + IN_CHUNK);
-      ids.push(...(await this.call(() => this.source.runQuery(buildWiql([`[System.Parent] IN (${chunk.join(', ')})`])))));
+      ids.push(...(await this.call(() => this.source.runQuery(buildWiql([`[${CARD_FIELD_REFS.parent}] IN (${chunk.join(', ')})`])))));
     }
     return ids;
   }
@@ -434,6 +467,7 @@ export class SyncEngine {
    * to show; otherwise answers now and refreshes behind it when the schedule says so.
    */
   async ready(): Promise<void> {
+    await this.verifySnapshotOwner();
     if (!this.meta || (this.store.size === 0 && !this.fullSyncedAt)) {
       await this.fullSync();
       return;

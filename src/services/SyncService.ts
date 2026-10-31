@@ -2,7 +2,7 @@ import type { CoreApi } from 'azure-devops-node-api/CoreApi';
 import { TimeFrame } from 'azure-devops-node-api/interfaces/WorkInterfaces';
 import { WorkItemErrorPolicy, type WorkItemType } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
-import type { RawItem, RawMeta, RawSprint, RawType, SyncSource } from '../interfaces/Sync';
+import type { Identity, RawItem, RawMeta, RawSprint, RawType, SyncSource } from '../interfaces/Sync';
 import { AREAS_GROUP, BATCH_LIMIT, CLASSIFICATION_DEPTH, ITERATIONS_GROUP } from './AzureDevOpsService';
 import { flattenAreas, flattenIterations } from './iterations';
 import { toRawItem } from './rawItem';
@@ -79,6 +79,10 @@ export class SyncService extends WorkItemViewService implements SyncSource {
       areas: areaRoot ? flattenAreas(areaRoot).map(area => area.path).filter((path): path is string => Boolean(path)) : [],
       fieldRefs: (fields ?? []).map(field => field.referenceName).filter((ref): ref is string => Boolean(ref)),
     };
+  }
+
+  public fetchIdentity(): Promise<Identity> {
+    return this.currentIdentity();
   }
 
   public runQuery(wiql: string, timePrecision?: boolean): Promise<number[]> {

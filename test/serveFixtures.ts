@@ -80,6 +80,11 @@ export const RAW_META: RawMeta = {
   ],
 };
 
+/** What a failed connection to Azure DevOps looks like: a socket error code, which the daemon reads as offline. */
+export function offlineError(): Error {
+  return Object.assign(new Error('connect ECONNREFUSED 13.107.42.20:443'), { code: 'ECONNREFUSED' });
+}
+
 export interface ItemSpec {
   rev?: number;
   type?: string;
@@ -127,10 +132,17 @@ export class FakeSource implements SyncSource {
   precise: boolean[] = [];
   fetches: Array<{ ids: number[]; fields: string[] }> = [];
   metaCalls = 0;
+  identityCalls = 0;
   failWith: Error | null = null;
 
   constructor(items: RawItem[] = []) {
     this.set(...items);
+  }
+
+  async fetchIdentity(): Promise<RawMeta['me']> {
+    if (this.failWith) throw this.failWith;
+    this.identityCalls++;
+    return this.meta.me;
   }
 
   set(...items: RawItem[]): void {

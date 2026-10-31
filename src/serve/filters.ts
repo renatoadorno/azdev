@@ -1,6 +1,7 @@
 import { CARD_FIELDS, FACETS, type Card, type CardField, type Facet, type ItemFilter, type Meta } from '../interfaces/Serve';
 import { CURRENT_SPRINT_ALIASES, matchIteration, suggestIterations } from '../services/iterations';
 import { parseSince } from '../services/queryBuilder';
+import { isClosedCategory } from './categories';
 import { currentSprint, previousSprint } from './meta';
 import { ProtocolError } from './protocol';
 
@@ -9,7 +10,6 @@ export const MAX_LIMIT = 1000;
 
 const LIST_KEYS = ['assignee', 'sprint', 'state', 'category', 'type', 'tag', 'area'] as const;
 const FILTER_KEYS: readonly string[] = [...LIST_KEYS, 'parent', 'open', 'q', 'changedSince'];
-const CLOSED_CATEGORIES = ['completed', 'removed'];
 
 export interface SortKey {
   field: CardField;
@@ -209,7 +209,7 @@ function matchesText(card: Card, q: string): boolean {
 }
 
 export function isOpenCard(card: Card): boolean {
-  return !CLOSED_CATEGORIES.includes(card.stateCategory.toLowerCase());
+  return !isClosedCategory(card.stateCategory);
 }
 
 export function matchesFilter(card: Card, filter: ItemFilter, context: MatchContext): boolean {

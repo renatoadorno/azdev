@@ -7,7 +7,7 @@ import { serverEvent } from '../src/serve/protocol';
 import { startServer, type RunningServer } from '../src/serve/server';
 import { Subscriptions, followEngine } from '../src/serve/subscriptions';
 import type { Status } from '../src/interfaces/Serve';
-import { ANA, FakeSource, NOW, ORG, PROJECT, item } from './serveFixtures';
+import { ANA, FakeSource, NOW, ORG, PROJECT, item, offlineError } from './serveFixtures';
 
 const MIN = 60_000;
 
@@ -316,7 +316,7 @@ describe('live queries', () => {
     const writer = engine(project(), { snapshotFile: file });
     await writer.fullSync();
     const offline = project();
-    offline.failWith = new Error('down');
+    offline.failWith = offlineError();
     const restarted = engine(offline, { snapshotFile: file });
     restarted.loadSnapshot();
     expect(await restarted.query(query({ assignee: ['@me'], open: true }))).toMatchObject({ source: 'cache', stale: true });

@@ -192,7 +192,10 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
         onUnauthorized: renewCredential,
         log,
       });
-      created.loadSnapshot();
+      // The owner check runs now, so the first request rarely waits for it.
+      if (created.loadSnapshot()) {
+        void created.verifySnapshotOwner().catch(err => log('owner-check-failed', { message: (err as Error).message }));
+      }
       followEngine(created, subscriptions, () => {
         scheduler.poke();
         broadcastStatus();
@@ -267,8 +270,11 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
   const binaryReplaced = binaryWatcher();
   const every = options.idleExitMs > 0 ? Math.max(250, Math.min(BINARY_CHECK_MS, Math.floor(options.idleExitMs / 4))) : BINARY_CHECK_MS;
   setInterval(() => {
+    // A new build ends the daemon even with clients connected: they reconnect and
+    // `serve start` brings the new one up. Waiting for them would keep old code
+    // serving for as long as a window stays open.
+    if (binaryReplaced()) return shutdown('binary-replaced');
     if (server.clients() > 0) return;
-    if (binaryReplaced()) shutdown('binary-replaced');
-    else if (options.idleExitMs > 0 && Date.now() - lastActivity >= options.idleExitMs) shutdown('idle');
+    if (options.idleExitMs > 0 && Date.now() - lastActivity >= options.idleExitMs) shutdown('idle');
   }, every);
 }

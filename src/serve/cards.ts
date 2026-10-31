@@ -1,6 +1,7 @@
 import type { Card, Meta, Person, SprintRef, StateInfo } from '../interfaces/Serve';
 import type { RawItem } from '../interfaces/Sync';
 import { workItemWebUrl } from '../services/workItemUtils';
+import { DONE_CATEGORY, REMOVED_CATEGORY, UNKNOWN_CATEGORY } from './categories';
 import { currentSprint, stateLookup } from './meta';
 
 /** Where each card field comes from. */
@@ -34,8 +35,11 @@ export function itemFields(projectFieldRefs: string[]): string[] {
   return Object.values(CARD_FIELD_REFS).filter(ref => known.has(ref.toLowerCase()));
 }
 
-const DONE_CATEGORY = 'Completed';
-const REMOVED_CATEGORY = 'Removed';
+/** The item's parent id, the one place that reads it off the raw fields. */
+export function parentOf(item: RawItem): number | undefined {
+  const parent = item.fields[CARD_FIELD_REFS.parent];
+  return typeof parent === 'number' ? parent : undefined;
+}
 
 export interface CardContext {
   orgUrl: string;
@@ -116,7 +120,7 @@ export function toCard(item: RawItem, context: CardContext): Card {
   const state = text(f[CARD_FIELD_REFS.state]) ?? '';
   const stateInfo = context.stateOf(type, state);
   const sprintPath = text(f[CARD_FIELD_REFS.sprint]);
-  const parentId = number(f[CARD_FIELD_REFS.parent]);
+  const parentId = parentOf(item);
   const parent = parentId === undefined ? undefined : context.lookup(parentId);
 
   // A removed child is neither work left nor work done.
@@ -130,7 +134,7 @@ export function toCard(item: RawItem, context: CardContext): Card {
     rev: item.rev,
     type,
     state,
-    stateCategory: stateInfo?.category ?? 'Proposed',
+    stateCategory: stateInfo?.category ?? UNKNOWN_CATEGORY,
     stateColor: stateInfo?.color,
     title: text(f[CARD_FIELD_REFS.title]) ?? '',
     assignedTo: toPerson(f[CARD_FIELD_REFS.assignedTo]),

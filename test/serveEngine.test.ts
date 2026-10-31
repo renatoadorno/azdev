@@ -10,7 +10,7 @@ import { dataHandlers } from '../src/serve/handlers';
 import { startServer, type RunningServer } from '../src/serve/server';
 import { Subscriptions } from '../src/serve/subscriptions';
 import type { Status } from '../src/interfaces/Serve';
-import { ANA, FakeSource, NOW, ORG, PROJECT, RAW_META, item } from './serveFixtures';
+import { ANA, FakeSource, NOW, ORG, PROJECT, RAW_META, item, offlineError } from './serveFixtures';
 
 /** My open card in an old sprint, its story, a sprint card of Ana's, and noise outside every scope. */
 function project() {
@@ -140,7 +140,7 @@ describe('snapshot', () => {
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
 
     const offline = project();
-    offline.failWith = new Error('offline');
+    offline.failWith = offlineError();
     const restarted = engine(offline, { snapshotFile: file });
     expect(restarted.loadSnapshot()).toBe(true);
     await restarted.ready();
@@ -164,6 +164,42 @@ describe('snapshot', () => {
     await cache.fullSync();
     // Now "mine" is Ana's: 2, 3 and 5 are hers and open; 100 (hers, open) with children 1 and 2.
     expect(allIds(cache)).toEqual([1, 2, 3, 5, 100]);
+  });
+
+  it("never answers with another login's snapshot, not even the first time", async () => {
+    const file = snapshotFile();
+    await engine(project(), { snapshotFile: file }).fullSync();
+    const other = project();
+    other.meta = { ...RAW_META, me: { id: 'other-guid', name: 'Ana', email: 'ana@acme.com' } };
+    const cache = engine(other, { snapshotFile: file });
+    cache.loadSnapshot();
+
+    expect((await cache.getMeta()).me.name).toBe('Ana');
+    await cache.ready();
+    expect(allIds(cache)).toEqual([1, 2, 3, 5, 100]);
+  });
+
+  it("checks the owner once, then serves the same login's snapshot without waiting for a sync", async () => {
+    const file = snapshotFile();
+    await engine(project(), { snapshotFile: file }).fullSync();
+    const same = project();
+    const cache = engine(same, { snapshotFile: file });
+    cache.loadSnapshot();
+
+    await cache.ready();
+    expect(allIds(cache)).toEqual([1, 3, 100]);
+    await cache.ready();
+    expect(same.identityCalls).toBe(1);
+  });
+
+  it('refuses to show the snapshot when the credential is rejected', async () => {
+    const file = snapshotFile();
+    await engine(project(), { snapshotFile: file }).fullSync();
+    const rejected = project();
+    rejected.failWith = Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    const cache = engine(rejected, { snapshotFile: file });
+    cache.loadSnapshot();
+    await expect(cache.ready()).rejects.toThrow('Unauthorized');
   });
 });
 

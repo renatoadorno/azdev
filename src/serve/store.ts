@@ -1,6 +1,5 @@
 import type { RawItem } from '../interfaces/Sync';
-
-const PARENT_FIELD = 'System.Parent';
+import { parentOf } from './cards';
 
 /**
  * The cached items by id. `seq` moves on every change, so whoever derives from
@@ -63,8 +62,8 @@ export class ItemStore {
   private buildChildIndex(): Map<number, number[]> {
     const index = new Map<number, number[]>();
     for (const item of this.items.values()) {
-      const parent = item.fields[PARENT_FIELD];
-      if (typeof parent !== 'number') continue;
+      const parent = parentOf(item);
+      if (parent === undefined) continue;
       index.set(parent, [...(index.get(parent) ?? []), item.id]);
     }
     return index;

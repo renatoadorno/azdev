@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { createCardContext, itemFields, parseTags, toCard, toPerson } from '../src/serve/cards';
+import { createCardContext, itemFields, parentOf, parseTags, toCard, toPerson } from '../src/serve/cards';
+import { CLOSED_BUCKETS, OPEN_BUCKETS, isClosedCategory } from '../src/serve/categories';
 import { buildMeta, currentSprint, previousSprint, stateLookup } from '../src/serve/meta';
 import { defaultScopes, isCovered, itemsToKeep, matchesRule, scopeCondition, scopeContext } from '../src/serve/scopes';
 import { ItemStore } from '../src/serve/store';
@@ -111,6 +112,21 @@ describe('toCard', () => {
     expect(fields).toContain('Microsoft.VSTS.Common.Priority');
     expect(fields).not.toContain('Microsoft.VSTS.Scheduling.Effort');
     expect(fields).not.toContain('System.BoardColumn');
+  });
+});
+
+describe('categories', () => {
+  // The cache filter, the live WIQL and the scopes must agree on what "open" is.
+  it('derives open and closed buckets from the same closed categories', () => {
+    expect(CLOSED_BUCKETS).toEqual(['done', 'removed']);
+    expect(OPEN_BUCKETS).toEqual(['todo', 'doing']);
+    expect(isClosedCategory('completed')).toBe(true);
+    expect(isClosedCategory('Resolved')).toBe(false);
+  });
+
+  it('reads the parent off the raw fields in one place', () => {
+    expect(parentOf(item(1, { parent: 100 }))).toBe(100);
+    expect(parentOf(item(1))).toBeUndefined();
   });
 });
 

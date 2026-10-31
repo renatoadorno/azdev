@@ -112,7 +112,7 @@ A client that cannot reach the daemon at all should treat it as `offline`.
 - `azdev serve stop` ends it. `azdev serve status` tells whether one answers.
 - `azdev serve` with no action runs it in the foreground.
 - `--port` fixes the port (default: any free one). `--idleExit` ends the daemon after that long with no client and no request: `30m`, `2h` (default), `0` for never.
-- The daemon ends by itself when the compiled binary on disk is replaced, so installing a new build does not leave an old daemon around.
+- The daemon ends by itself within 30 s when the compiled binary on disk is replaced, even with clients connected, so installing a new build does not leave an old daemon around. A client sees the connection end; reconnecting through `azdev serve start` brings up the new build.
 - A second daemon exits with code `75`: a lock held through the kernel allows one per user, and it is freed even if the first is killed.
 - A client that finds no `serve.json`, or fails to connect or say hello, can run `azdev serve start --json` and try again.
 
@@ -120,7 +120,7 @@ A client that cannot reach the daemon at all should treat it as `offline`.
 
 - `serve.json` next to `config.json` (mode `0600`): `port`, `token`, `pid`, `version`, `proto`, `startedAt`. Written atomically once the daemon listens and removed on exit.
 - `serve.lock` next to it.
-- `snapshot-<hash>.json` in the cache directory (`AZDEV_CACHE_DIR`, else `$XDG_CACHE_HOME/azdev`, else `~/.cache/azdev`), mode `0600`. Card fields and metadata only: no description, comment or credential. It lets the first answer after a restart come without the network; it is ignored for another organization, project or schema.
+- `snapshot-<hash>.json` in the cache directory (`AZDEV_CACHE_DIR`, else `$XDG_CACHE_HOME/azdev`, else `~/.cache/azdev`), mode `0600`. Card fields and metadata only: no description, comment or credential. It lets the first answer after a restart come without a sync; it is ignored for another organization, project or schema, and dropped when the credential turns out to belong to another login (one identity call before it is shown; offline, it is shown as stale).
 - `serve.log` in the cache directory.
 
 ## Security
