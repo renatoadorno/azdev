@@ -1,10 +1,16 @@
 import * as fs from 'fs';
 import { ConfigError, exitOnConfigError, readConfigFile, resolveCliConfig } from '../cli/config';
+import { readWatch } from '../cli/watchState';
 import type { AzureDevOpsConfig } from '../interfaces/AzureDevOps';
-import { PROTOCOL_VERSION, type Status } from '../interfaces/Serve';
+import { PROTOCOL_VERSION, type ServeError, type Status } from '../interfaces/Serve';
+import { SyncService } from '../services/SyncService';
+import { watchedIds } from '../services/watch';
+import { SyncEngine } from './engine';
+import { dataHandlers } from './handlers';
 import {
   EXIT_ALREADY_RUNNING,
   acquireServeLock,
+  cacheDir,
   generateToken,
   readServeInfo,
   removeServeInfo,
@@ -12,6 +18,7 @@ import {
 } from './runtime';
 import { describeProtocol } from './schema';
 import { startServer } from './server';
+import { snapshotPath } from './snapshot';
 
 export interface DaemonOptions {
   port: number;
@@ -36,12 +43,15 @@ function credentialSource(config: AzureDevOpsConfig): AuthStatus['source'] {
 class Credentials {
   config: AzureDevOpsConfig | null = null;
   auth: AuthStatus = { state: 'unknown' };
+  /** Moves on every successful load, so the engine knows to rebuild its client. */
+  generation = 0;
 
   /** Throws only a config the daemon cannot start with (missing or invalid file). */
   async load(): Promise<void> {
     try {
       this.config = await resolveCliConfig();
       this.auth = { state: 'unknown', source: credentialSource(this.config) };
+      this.generation++;
     } catch (err) {
       if (!(err instanceof ConfigError) || err.kind !== 'needs_login') throw err;
       this.config = null;
@@ -57,6 +67,30 @@ class Credentials {
       const reason = err instanceof ConfigError ? [err.message, err.hint].filter(Boolean).join('\n') : String(err);
       this.auth = { state: 'needs_login', hint: reason };
     }
+  }
+
+  markOk(): void {
+    if (this.auth.state !== 'ok' && this.config) this.auth = { state: 'ok', source: credentialSource(this.config) };
+  }
+
+  /** A 401 from Azure DevOps: the next hello re-reads the credential. */
+  markFailure(error: ServeError): void {
+    if (error.kind === 'needs_login') this.auth = { state: 'needs_login', hint: error.hint };
+  }
+
+  /** The config to talk to Azure DevOps with, or the needs_login error a client can show. */
+  require(): AzureDevOpsConfig {
+    if (this.config) return this.config;
+    throw new ConfigError('needs_login', ['No Azure DevOps credential.', ...(this.auth.hint ? [this.auth.hint] : [])]);
+  }
+}
+
+/** Watched cards of the project; a malformed watch.json must not break the cache. */
+function watched(project: string): number[] {
+  try {
+    return watchedIds(readWatch(project));
+  } catch {
+    return [];
   }
 }
 
@@ -106,6 +140,30 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
   const token = generateToken();
   let lastActivity = Date.now();
 
+  let engine: SyncEngine | null = null;
+  let engineGeneration = -1;
+  /** Built on the first data request, from the snapshot; rebuilt client when the credential changes. */
+  function requireEngine(): SyncEngine {
+    const config = credentials.require();
+    if (!engine) {
+      engine = new SyncEngine({
+        orgUrl: config.orgUrl,
+        project: config.project,
+        source: new SyncService(config),
+        snapshotFile: snapshotPath(cacheDir(), config.orgUrl, config.project),
+        watched: () => watched(config.project),
+        onSuccess: () => credentials.markOk(),
+        onError: error => credentials.markFailure(error),
+        log,
+      });
+      engine.loadSnapshot();
+    } else if (engineGeneration !== credentials.generation) {
+      engine.setSource(new SyncService(config));
+    }
+    engineGeneration = credentials.generation;
+    return engine;
+  }
+
   const server = startServer({
     port: options.port,
     token,
@@ -114,6 +172,7 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
     handlers: {
       'status.get': () => status(),
       'schema.get': () => describeProtocol(),
+      ...dataHandlers(requireEngine),
     },
     beforeHello: () => credentials.retryIfMissing(),
     onActivity: () => {
@@ -130,11 +189,14 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
       startedAt,
       project,
       auth: credentials.auth,
-      cache: { items: 0, syncedAt: null, fullSyncedAt: null, stale: false },
-      sync: { running: false, nextAt: null, backoffUntil: null, lastError: null },
+      cache: engine?.cacheStatus() ?? { items: 0, syncedAt: null, fullSyncedAt: null, stale: false },
+      sync: engine?.syncStatus() ?? { running: false, nextAt: null, backoffUntil: null, lastError: null },
       clients: server.clients(),
     };
   }
+
+  // Loads the snapshot now (no network), so status shows the cache from the start.
+  if (credentials.config) requireEngine();
 
   writeServeInfo({ pid: process.pid, port: server.port, token, version: options.version, proto: PROTOCOL_VERSION, startedAt });
   log('listening', { pid: process.pid, port: server.port, project, auth: credentials.auth.state, idleExitMs: options.idleExitMs });
@@ -144,6 +206,7 @@ export async function runDaemon(options: DaemonOptions): Promise<void> {
     if (stopping) return;
     stopping = true;
     log('stopping', { reason });
+    engine?.saveSnapshot();
     server.stop();
     removeServeInfo(process.pid);
     lock.release();

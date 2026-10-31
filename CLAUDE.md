@@ -50,6 +50,7 @@ src/
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
     Flows.ts        — flows.json schema (FlowsFile/FlowDefinition/FlowCard) and flow params
     Stats.ts        — stats params (StatsFilters, CarryoverRules from flows.json)
+    Sync.ts         — RawItem / RawMeta / SyncSource: what the serve cache reads (internal)
     Serve.ts        — `azdev serve` contract: NDJSON messages, METHODS and MethodMap,
                       Card/Meta/ItemFilter/Status, ERROR_KINDS; PROTOCOL_VERSION
     *.ts            — Domain-specific param interfaces per command group
@@ -75,6 +76,9 @@ src/
                              CLI); comments mentioning me (@RecentMentions candidates,
                              comments paged); watch list rows for `workitem watch`
     FlowService.ts         — flow status/apply over FlowsFile
+    SyncService.ts         — the serve cache's reads: fetchMeta (types, team + project sprints,
+                             members, tags, areas, field refs, me), runQuery, fetchItems (raw,
+                             identities slimmed to name + account)
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
                              cycle time, aging; past board states through WIQL ASOF
     *Service.ts     — Other domain services extending AzureDevOpsService
@@ -112,6 +116,21 @@ src/
                       missing, idle exit, exits when the compiled binary on disk is replaced
     control.ts      — start (detached, swaps a daemon of another version) / stop / status
     schema.ts       — describeProtocol() for schema.get
+    engine.ts       — SyncEngine: meta (12 h TTL, re-read on the first sync of a run), full sync
+                      of the scopes + parents/children, snapshot, cards derived per store seq,
+                      concurrent callers share one run; ready() waits only when empty
+    handlers.ts     — meta.get, items.list, items.get, sync.run over the engine; requireId
+    Pure modules (no network, unit-tested):
+    meta.ts         — RawMeta → Meta (types with states/transitions, sprints merged with the
+                      team's timeframe); currentSprint / previousSprint / stateLookup
+    cards.ts        — RawItem → Card; CARD_FIELD_REFS; itemFields() asks only for fields the
+                      project has (an unknown field fails the whole batch)
+    store.ts        — ItemStore: upsert by rev, remove, child index, seq
+    scopes.ts       — mine-open / current sprint / watch: WIQL condition and the same test run
+                      locally (itemsToKeep adds parents and children); isCovered for live queries
+    filters.ts      — parseItemsQuery (untrusted params → invalid_request), sprint resolution,
+                      matching, sort, facets, projection, paging
+    snapshot.ts     — snapshot-<hash>.json in cacheDir(), 0600, ignored on schema/org/project mismatch
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every

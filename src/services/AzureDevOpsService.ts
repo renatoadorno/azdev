@@ -19,7 +19,8 @@ import {
   suggestIterations,
   type SlimIterationNode,
 } from "./iterations";
-import { ME, slimWorkItem, type WorkItemRow } from "./workItemUtils";
+import { ME, slimWorkItem, workItemWebUrl, type WorkItemRow } from "./workItemUtils";
+import type { Identity } from "../interfaces/Sync";
 import { resolveField, resolveFieldOffline, suggestFields, type FieldDefinition } from "./fieldNames";
 import { bucketOf, categoriesFrom, type Bucket, type StateCategories } from "./stats";
 
@@ -31,7 +32,7 @@ export const AREAS_GROUP = 'Areas' as unknown as TreeStructureGroup;
 export const ITERATIONS_GROUP = 'Iterations' as unknown as TreeStructureGroup;
 
 /** getWorkItems accepts at most 200 ids per call. */
-const BATCH_LIMIT = 200;
+export const BATCH_LIMIT = 200;
 
 export class AzureDevOpsService {
   protected connection: azdev.WebApi;
@@ -151,7 +152,7 @@ export class AzureDevOpsService {
 
   /** Browser link to a work item. */
   protected webUrl(id: number): string {
-    return `${this.config.orgUrl}/${encodeURIComponent(this.config.project)}/_workitems/edit/${id}`;
+    return workItemWebUrl(this.config.orgUrl, this.config.project, id);
   }
 
   private authenticatedUser() {
@@ -172,6 +173,16 @@ export class AzureDevOpsService {
     const user = await this.authenticatedUser();
     if (!user?.id) throw new Error('Could not resolve the identity id of the authenticated user');
     return user.id;
+  }
+
+  /** Id, display name and account of the authenticated user, from one connection call. */
+  protected async currentIdentity(): Promise<Identity> {
+    const user = await this.authenticatedUser();
+    return {
+      id: await this.currentUserId(),
+      name: user?.providerDisplayName ?? '',
+      email: await this.currentUser(),
+    };
   }
 
   /** `@me` → the authenticated account; anything else passes through. */

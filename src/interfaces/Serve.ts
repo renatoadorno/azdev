@@ -243,7 +243,7 @@ export interface SprintInfo {
 export interface Meta {
   orgUrl: string;
   project: string;
-  me: Person & { id: string };
+  me: { id: string; name: string; email: string };
   types: TypeInfo[];
   sprints: SprintInfo[];
   members: Person[];
