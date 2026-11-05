@@ -1535,3 +1535,30 @@ Exits `1` when the key was not set.
 azdev config unset collection
 azdev config unset personalAccessToken   # removes it from the keychain
 ```
+
+---
+
+## serve
+
+A local daemon that caches your cards and answers clients over a socket (NDJSON over TCP on 127.0.0.1). It is one command with an action as a positional, not a group of subcommands. The protocol, for whoever writes a client, is in [serve.md](./serve.md).
+
+```
+azdev serve [start|stop|status] [--port <n>] [--idleExit <duration>]
+```
+
+- `start`: run the daemon in the background and return once it answers, without waiting for a sync. One of the same version already running is left alone; one of another version is replaced. Prints `started`, `port` and the status, never the token.
+- `stop`: end the daemon that answers.
+- `status`: print `running` and, when one answers, port, version, login, cache and sync state.
+- No action: run it in the foreground.
+- `--port`: TCP port on 127.0.0.1 (default: any free port).
+- `--idleExit`: exit after this long with no client and no request, such as `30m` or `2h`; `0` never exits (default `2h`).
+
+The port and token are in `serve.json` next to `config.json`. A second daemon exits with code `75`.
+
+**Examples:**
+
+```bash
+azdev serve start
+azdev serve status --json
+azdev serve stop
+```

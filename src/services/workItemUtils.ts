@@ -35,6 +35,11 @@ export const HIERARCHY_FORWARD = 'System.LinkTypes.Hierarchy-Forward';
 /** Hierarchy link type for child → parent relations. */
 export const HIERARCHY_REVERSE = 'System.LinkTypes.Hierarchy-Reverse';
 
+/** Browser link to a work item. */
+export function workItemWebUrl(orgUrl: string, project: string, id: number): string {
+  return `${orgUrl}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
+}
+
 /** REST url of a work item, the form relations point at. */
 export function workItemApiUrl(orgUrl: string, id: number): string {
   return `${orgUrl}/_apis/wit/workItems/${id}`;

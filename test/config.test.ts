@@ -149,6 +149,64 @@ describe('loadCliConfig — file validation', () => {
   });
 });
 
+describe('resolveCliConfig — typed errors instead of exiting (the daemon keeps running)', () => {
+  async function configError(): Promise<InstanceType<typeof cfg.ConfigError>> {
+    const err = await cfg.resolveCliConfig().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(cfg.ConfigError);
+    expect(exit).not.toHaveBeenCalled();
+    return err as InstanceType<typeof cfg.ConfigError>;
+  }
+
+  it('reports config_missing when there is no file', async () => {
+    useConfig(null);
+    const err = await configError();
+    expect(err.kind).toBe('config_missing');
+    expect(err.message).toContain('not found');
+    expect(err.hint).toContain('azdev config set orgUrl');
+  });
+
+  it('reports config_invalid for a file that is not JSON', async () => {
+    useConfig('{ not json');
+    expect((await configError()).kind).toBe('config_invalid');
+  });
+
+  it('reports config_invalid when orgUrl or project is missing', async () => {
+    useConfig({ orgUrl: ORG });
+    const err = await configError();
+    expect(err.kind).toBe('config_invalid');
+    expect(err.message).toContain('orgUrl and project');
+  });
+
+  it('reports config_invalid for an unknown richTextFormat', async () => {
+    useConfig({ ...base, richTextFormat: 'md' });
+    keychain.set(`pat:${ORG}`, 'tok-123');
+    expect((await configError()).kind).toBe('config_invalid');
+  });
+
+  it('reports needs_login with the way out when no credential is stored', async () => {
+    useConfig(base);
+    const err = await configError();
+    expect(err.kind).toBe('needs_login');
+    expect(err.hint).toContain('azdev config set personalAccessToken');
+    expect(err.hint).toContain('AZDEV_PAT');
+  });
+
+  it('prints nothing on its own: the caller decides how to report', async () => {
+    useConfig(base);
+    await configError();
+    expect(stderr.lines).toEqual([]);
+  });
+
+  it('returns the same config loadCliConfig does', async () => {
+    useConfig(base);
+    keychain.set(`pat:${ORG}`, 'tok-123');
+    expect(await cfg.resolveCliConfig()).toEqual(await cfg.loadCliConfig());
+  });
+});
+
 describe('loadCliConfig — richTextFormat', () => {
   it('passes a valid richTextFormat through as the default for rich-text writes', async () => {
     useConfig({ ...base, richTextFormat: 'markdown' });

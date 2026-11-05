@@ -81,6 +81,8 @@ Override the default project for any command with `--project <name>`.
 | `stats` | 3 | Throughput per sprint or week, lead and cycle time, aging of open items |
 | `config` | 5 | Show, get, set and unset CLI configuration; locate config, flows and conventions files |
 
+`azdev serve [start|stop|status]` is a local daemon with a cache for long-lived clients such as a terminal panel (NDJSON over TCP on 127.0.0.1). It is a single command, not a group; see [docs/serve.md](./docs/serve.md) for the protocol.
+
 Full command reference: [docs/commands.md](./docs/commands.md)
 
 ## Exit codes
@@ -90,12 +92,14 @@ Full command reference: [docs/commands.md](./docs/commands.md)
 | `0` | Success |
 | `1` | Error — API failure, invalid ID or flag value |
 | `2` | Config file missing or incomplete (`orgUrl`/`project`), or `flows.json` missing/invalid for `flow` |
+| `75` | `azdev serve` while another daemon holds the lock |
 
 ## Documentation
 
 - [Getting Started](./docs/getting-started.md) — installation, initial setup, first commands
 - [Configuration](./docs/configuration.md) — all config keys, auth types (PAT, Entra ID, NTLM, Basic), on-premises setup
 - [Command Reference](./docs/commands.md) — all subcommands with arguments, options, and examples
+- [Serve protocol](./docs/serve.md) — the local daemon: messages, methods, errors, watch semantics, lifecycle and files
 - [Changelog](./CHANGELOG.md) — notable changes in each release
 
 ## Development

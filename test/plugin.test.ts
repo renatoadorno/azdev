@@ -10,6 +10,7 @@ import metadata from '../src/cli/commands/metadata';
 import flow from '../src/cli/commands/flow';
 import stats from '../src/cli/commands/stats';
 import config from '../src/cli/commands/config';
+import serve, { SERVE_ACTIONS } from '../src/cli/commands/serve';
 import { validateFlows } from '../src/services/flowRules';
 
 const ROOT = path.resolve(import.meta.dir, '..');
@@ -114,6 +115,29 @@ describe('plugin skills', () => {
       }
     }
     expect(gaps).toEqual([]);
+  });
+
+  // serve has no subcommands: an action positional and its own flags.
+  it('documents the serve flags and every serve action in references/commands.md', () => {
+    const reference = fs.readFileSync(path.join(SKILLS_DIR, 'azdev-cli/references/commands.md'), 'utf-8');
+    const section = reference.split(/^### /m).find(chunk => chunk.startsWith('serve\n'));
+    expect(section).toBeDefined();
+    const GLOBAL_FLAGS = new Set(['json', 'markdown', 'project']);
+    const flags = Object.entries((serve.args ?? {}) as Record<string, { type?: string }>)
+      .filter(([flag, arg]) => arg.type !== 'positional' && !GLOBAL_FLAGS.has(flag))
+      .map(([flag]) => `--${flag}`);
+    expect(flags.length).toBeGreaterThan(0);
+    // Each has its own bullet: the usage line alone would let a described-nowhere flag pass.
+    const gaps = [...flags, ...SERVE_ACTIONS].filter(item => !section!.includes(`- \`${item}\``));
+    expect(gaps).toEqual([]);
+  });
+
+  it('keeps the serve docs in step with the CLI: every action and flag, and the exit code of a second daemon', () => {
+    const docs = fs.readFileSync(path.join(ROOT, 'docs/commands.md'), 'utf-8');
+    const section = docs.slice(docs.indexOf('\n## serve\n'));
+    const missing = [...SERVE_ACTIONS.map(action => `\`${action}\``), '`--port`', '`--idleExit`', '`75`'].filter(item => !section.includes(item));
+    expect(missing).toEqual([]);
+    expect(fs.existsSync(path.join(ROOT, 'docs/serve.md'))).toBe(true);
   });
 
   it('ships an example flows.json that azdev accepts', () => {

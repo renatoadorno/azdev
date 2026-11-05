@@ -417,6 +417,22 @@ Numbers over time. Every stats command takes `--mine`, `--assignedTo <user>`, `-
 
 ---
 
+## serve
+
+Not a group of subcommands: one command that takes an action as a positional. It is a local daemon with a cache for long-lived clients such as a terminal panel; a skill rarely needs it, and the protocol is in `docs/serve.md` of the repository.
+
+### serve
+
+`azdev serve [start|stop|status] [--port N] [--idleExit D]` — the action decides what it does; `--json` and `--markdown` change the output format.
+- `start` runs the daemon in the background and returns once it answers, without waiting for a sync. One of the same version already running is left alone; one of another version is replaced. Prints `started`, `port` and the status, never the token.
+- `stop` ends the daemon that answers.
+- `status` prints `running` and, when one answers, its port, version, login, cache and sync state.
+- No action runs the daemon in the foreground. A second daemon exits `75`.
+- `--port` — TCP port on 127.0.0.1 (default: any free port).
+- `--idleExit` — exit after this long with no client and no request: `30m`, `2h`, `0` for never (default `2h`).
+
+---
+
 ## Exit codes
 
-`0` success · `1` API error (one stderr line, status code prefix; a 401 adds a credential hint) or an invalid flag/ID · `2` config or flows.json missing/invalid, or no credential found.
+`0` success · `1` API error (one stderr line, status code prefix; a 401 adds a credential hint) or an invalid flag/ID · `2` config or flows.json missing/invalid, or no credential found · `75` `azdev serve` while another daemon holds the lock.

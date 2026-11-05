@@ -517,7 +517,9 @@ export class WorkItemService extends AzureDevOpsService {
   public async updateWorkItemState(params: UpdateWorkItemStateParams): Promise<any> {
     const witApi = await this.getWorkItemTrackingApi();
 
+    // The test op goes first: the whole patch is refused when the card moved on since `rev`.
     const patchDocument: JsonPatchOperation[] = [
+      ...(params.rev !== undefined ? [{ op: Operation.Test, path: '/rev', value: params.rev }] : []),
       {
         op: Operation.Add,
         path: "/fields/System.State",

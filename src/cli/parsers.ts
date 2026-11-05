@@ -32,6 +32,16 @@ export function parseCount(value: unknown, label: string): number | undefined {
   return n;
 }
 
+/** A span in milliseconds: `0`, `500ms`, `30s`, `30m`, `2h`. */
+export function parseDuration(value: string, label: string): number {
+  const UNIT_MS: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+  const match = value.trim().match(/^(\d+)(ms|s|m|h)?$/);
+  const amount = Number(match?.[1]);
+  const unit = match?.[2];
+  if (!match || (!unit && amount !== 0)) failUsage(`Invalid ${label}: ${value} (use 0, 30s, 30m or 2h)`);
+  return unit ? amount * UNIT_MS[unit]! : 0;
+}
+
 export function parseCsv(value?: string): string[] | undefined {
   if (!value) return undefined;
   const parts = value.split(',').map(s => s.trim()).filter(Boolean);

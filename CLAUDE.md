@@ -50,6 +50,9 @@ src/
     AzureDevOps.ts  — AzureDevOpsConfig and auth types
     Flows.ts        — flows.json schema (FlowsFile/FlowDefinition/FlowCard) and flow params
     Stats.ts        — stats params (StatsFilters, CarryoverRules from flows.json)
+    Sync.ts         — RawItem / RawMeta / SyncSource: what the serve cache reads (internal)
+    Serve.ts        — `azdev serve` contract: NDJSON messages, METHODS and MethodMap,
+                      Card/Meta/ItemFilter/Status, ERROR_KINDS; PROTOCOL_VERSION
     *.ts            — Domain-specific param interfaces per command group
   services/         — Direct Azure DevOps API wrappers (use azure-devops-node-api)
     AzureDevOpsService.ts  — Base class: connection/auth, plus what every service shares:
@@ -73,10 +76,17 @@ src/
                              CLI); comments mentioning me (@RecentMentions candidates,
                              comments paged); watch list rows for `workitem watch`
     FlowService.ts         — flow status/apply over FlowsFile
+    SyncService.ts         — extends WorkItemViewService; the serve cache's reads: fetchMeta
+                             (types, team + project sprints, members, tags, areas, field refs,
+                             me), fetchIdentity (who the credential is, one call), runQuery,
+                             fetchItems (raw, identities slimmed to name +
+                             account), plus fetchDetail, fetchRevisions and changeState (the
+                             state write carries `rev` as a `test /rev` op)
     StatsService.ts        — sprint progress/carryover, story progress, throughput,
                              cycle time, aging; past board states through WIQL ASOF
     *Service.ts     — Other domain services extending AzureDevOpsService
     Pure modules (no network, unit-tested):
+    rawItem.ts       — toRawItem / slimIdentities: API work item → the cache's RawItem
     workItemUtils.ts — slimWorkItem, WIQL filters/escape, tags, patch ops, constants
     iterations.ts    — classification node flattening + matchIteration
     richText.ts      — HTML/Markdown field → text, attachment url parsing
@@ -94,12 +104,73 @@ src/
     queryBuilder.ts  — query flags → WIQL, relative dates (7d/2w), [short] names in --where
     stats.ts         — state buckets from state categories, totals, working days, pace,
                        percentiles, weeks, aging, carry-over
+  serve/            — `azdev serve`, the local daemon for the Herdr mod (later the CLI);
+                      protocol for client authors in docs/serve.md
+    protocol.ts     — NDJSON over TCP: LineSplitter (splits bytes on 0x0A before decoding,
+                      so UTF-8 survives chunk cuts), parseRequest against METHODS, message
+                      builders, ProtocolError, OutboundQueue (socket writes can be partial;
+                      drain flushes the rest)
+    errors.ts       — any failure → ServeError {kind, message, hint}: ConfigError, HTTP
+                      status (401 → needs_login, 409/412/TF26071 → conflict), socket codes
+    session.ts      — one connection: only hello (token + proto) until it succeeds, then handlers
+    server.ts       — Bun.listen on 127.0.0.1: pre-hello byte limit, hello timeout, slow-client cap
+    client.ts       — connectDaemon (Bun.connect + hello), DaemonError; used by serve status/stop
+    runtime.ts      — serve.json (port, token, pid; 0600, atomic) next to config.json, flock lock
+                      via bun:ffi (kernel frees it on kill -9), cacheDir() (AZDEV_CACHE_DIR)
+    daemon.ts       — runDaemon: lock (exit 75 if taken), credential re-read on hello while
+                      missing, idle exit, exits within 30 s when the compiled binary on disk is
+                      replaced, even with clients connected (they reconnect through serve start)
+    control.ts      — start (detached, swaps a daemon of another version) / stop / status
+    schema.ts       — describeProtocol() for schema.get
+    engine.ts       — SyncEngine: meta (12 h TTL, re-read on the first sync of a run), full sync
+                      of the scopes + parents/children, incremental sync (ChangedDate window
+                      from the instant the last query began, minus 2 min; over 1000 ids or a
+                      changed scope set → full), snapshot (shown only after fetchIdentity
+                      confirms the same login; another login wipes it; offline it is shown
+                      stale), cards derived per store seq,
+                      concurrent callers share one run; ready() waits only when empty and
+                      refreshes behind the answer by schedule.ts. query() answers from the
+                      cache or live (temporary scope); detail() (LRU) and setState();
+                      a 401 re-reads the credential once (onUnauthorized); backoff/pause
+                      state for the schedule; onChange listeners (watchers, status event)
+    scheduler.ts    — SyncScheduler: one timer for the next planned sync, poked when a watch
+                      starts/ends or a sync ends; statusFingerprint() for the status event
+    subscriptions.ts — items.watch: one entry per sub with the fingerprint of its last result,
+                      push only on change, cleanup on unwatch and conn.onClose; followEngine()
+                      (the name watch.ts is taken in services/)
+    handlers.ts     — meta.get, items.list/get/detail/setState/watch/unwatch, sync.run over
+                      the engine; requireId; params are checked before the engine is asked for
+    Pure modules (no network, unit-tested):
+    schedule.ts     — intervals (60 s incremental, 30 min full, 30 s stale), nextSync(),
+                      refreshOnRequest(), backoffDelay() (30 s → 10 min), retryAfterMs()
+    liveQuery.ts    — ItemFilter → WIQL (queryConditions + bucketCondition for open), isTextOnly,
+                      filterKey; LIVE_LIMIT 1000
+    tempScopes.ts   — the live queries' scopes: members, lastUsedAt, 30 min expiry
+    stateChange.ts  — planStateChange(): validates against meta.types[type].transitions[state],
+                      canonical name, invalid_state with details {current, validStates}
+    detail.ts       — viewWorkItem output → CardDetail, LruCache, detailKey (id, rev,
+                      commentCount, comments, history)
+    categories.ts   — what "open" means, in one place: closed state categories, isClosedCategory,
+                      OPEN/CLOSED buckets derived from stats' BUCKET_OF_CATEGORY
+    meta.ts         — RawMeta → Meta (types with states/transitions, sprints merged with the
+                      team's timeframe); currentSprint / previousSprint / stateLookup
+    cards.ts        — RawItem → Card; CARD_FIELD_REFS; parentOf (the one reader of the parent
+                      field); itemFields() asks only for fields the project has (an unknown
+                      field fails the whole batch)
+    store.ts        — ItemStore: upsert by rev, remove, child index, seq
+    scopes.ts       — mine-open / current sprint / watch: WIQL condition and the same test run
+                      locally (itemsToKeep adds parents and children); isCovered for live queries
+    filters.ts      — parseItemsQuery (untrusted params → invalid_request), sprint resolution,
+                      matching, sort, facets, projection, paging
+    snapshot.ts     — snapshot-<hash>.json in cacheDir(), 0600, ignored on schema/org/project mismatch
   cli/
     index.ts        — CLI entry point (citty), registers command groups
     command.ts      — globalOptions + runService()/runCommand(): the body every
                       subcommand shares (load config, apply --project, format, handle errors)
     config.ts       — configPath() / loadCliConfig() / writeCliConfig() / unsetCliConfig()
                       Non-secret config → ~/.config/azdev/config.json (mode 0600)
+                      resolveCliConfig() throws ConfigError (config_missing, config_invalid,
+                      needs_login) for the daemon; loadCliConfig() prints it and exits 2
     secrets.ts      — Bun.secrets wrapper: resolveSecret/storeSecret/deleteSecret/redactSecrets
                       Credentials live in the OS keychain (service com.azdev.cli)
     flows.ts        — flowsPath() (next to config.json) / loadFlows() (exit 2 when missing/invalid)
@@ -107,7 +178,8 @@ src/
                       default, --template, --noTemplate), readCardDescriptions() for flow apply
     inboxState.ts   — inbox.json next to config.json: last check per project (read/save)
     watchState.ts   — watch.json next to config.json: readWatch / updateWatch (atomic rename)
-    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit
+    errors.ts       — exitWithError(): 1-line stderr message (statusCode prefix, credential hint on 401) + exit;
+                      AUTH_FAILED_HINT is shared with serve/errors.ts
     parsers.ts      — flag validation before any API call (parseId, parseCount, parseCsv,
                       parseRichTextFormat, textOrFile for --*File flags); failUsage() exits 1
     warnings.ts     — silences DEP0169 only: azure-devops-node-api still calls the
@@ -122,6 +194,8 @@ src/
       flow.ts       — list / status / apply
       stats.ts      — throughput / cycle-time / aging
       config.ts     — show / set / get / unset / paths
+      serve.ts      — `azdev serve [start|stop|status]`: a positional action, because citty
+                      runs a parent's run after its subcommand
     formatters/
       index.ts      — format(data, flags) selector
       toon.ts       — encode() from @toon-format/toon (default)
@@ -169,7 +243,9 @@ plugin/
   skills/setup/              — /azdev:setup: binary matching the plugin version, org, project, token
 ```
 
-`test/plugin.test.ts` enforces what `claude plugin validate` does not check:
+`test/plugin.test.ts` enforces what `claude plugin validate` does not check (`serve` has no
+subcommands, so it is checked apart: its flags and each of `SERVE_ACTIONS` need a bullet in
+`references/commands.md`, and `docs/commands.md` must name them):
 - `package.json`, `plugin.json` and the marketplace entry carry the same version — bump all three together;
 - strict YAML frontmatter in every `SKILL.md` (an unquoted `: ` silently drops name and description);
 - every `azdev <group> <sub>` mentioned in a skill exists, and the subcommand count in `azdev-cli` is right;
@@ -211,6 +287,7 @@ non-default view goes in an `async` callback that returns the value to print.
 - `0` — success
 - `1` — error (API failures via `exitWithError`, invalid IDs, invalid flag values)
 - `2` — config file missing/invalid, incomplete, or no credential found (`loadCliConfig` / `config show`); flows.json missing/invalid (`loadFlows`)
+- `75` — `azdev serve` while another daemon holds the lock
 
 ## Configuration
 
