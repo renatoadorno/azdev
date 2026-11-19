@@ -100,6 +100,7 @@ Full command reference: [docs/commands.md](./docs/commands.md)
 - [Configuration](./docs/configuration.md) — all config keys, auth types (PAT, Entra ID, NTLM, Basic), on-premises setup
 - [Command Reference](./docs/commands.md) — all subcommands with arguments, options, and examples
 - [Serve protocol](./docs/serve.md) — the local daemon: messages, methods, errors, watch semantics, lifecycle and files
+- [Roadmap](./docs/roadmap.md) — planned features in order, and ideas left out
 - [Changelog](./CHANGELOG.md) — notable changes in each release
 
 ## Development
